@@ -1,0 +1,74 @@
+nohup: ignoring input
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] -----------------------< com.azt:streamingData >------------------------
+[INFO] Building streamingData 0.0.1-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] >>> spring-boot:3.5.6:run (default-cli) > test-compile @ streamingData >>>
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ streamingData ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO] Copying 0 resource from src/main/resources to target/classes
+[INFO] 
+[INFO] --- compiler:3.11.0:compile (default-compile) @ streamingData ---
+[INFO] Changes detected - recompiling the module! :source
+[INFO] Compiling 15 source files with javac [debug release 21] to target/classes
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ streamingData ---
+[INFO] skip non existing resourceDirectory /home/arthurd3/Desktop/Projects/azt-dataStreaming/streamingData/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.11.0:testCompile (default-testCompile) @ streamingData ---
+[INFO] Changes detected - recompiling the module! :dependency
+[INFO] Compiling 1 source file with javac [debug release 21] to target/test-classes
+[INFO] 
+[INFO] <<< spring-boot:3.5.6:run (default-cli) < test-compile @ streamingData <<<
+[INFO] 
+[INFO] 
+[INFO] --- spring-boot:3.5.6:run (default-cli) @ streamingData ---
+[INFO] Attaching agents: []
+Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v3.5.6)
+
+2025-10-13T13:15:15.097-03:00  INFO 87290 --- [streamingData] [           main] c.a.s.StreamingDataApplication           : Starting StreamingDataApplication using Java 21.0.2 with PID 87290 (/home/arthurd3/Desktop/Projects/azt-dataStreaming/streamingData/target/classes started by arthurd3 in /home/arthurd3/Desktop/Projects/azt-dataStreaming/streamingData)
+2025-10-13T13:15:15.099-03:00  INFO 87290 --- [streamingData] [           main] c.a.s.StreamingDataApplication           : No active profile set, falling back to 1 default profile: "default"
+2025-10-13T13:15:15.619-03:00  INFO 87290 --- [streamingData] [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8080 (http)
+2025-10-13T13:15:15.628-03:00  INFO 87290 --- [streamingData] [           main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2025-10-13T13:15:15.628-03:00  INFO 87290 --- [streamingData] [           main] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.46]
+2025-10-13T13:15:15.653-03:00  INFO 87290 --- [streamingData] [           main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2025-10-13T13:15:15.654-03:00  INFO 87290 --- [streamingData] [           main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 526 ms
+Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
+Directory already exists
+2025-10-13T13:15:15.882-03:00  WARN 87290 --- [streamingData] [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Failed to start bean 'webServerStartStop'
+2025-10-13T13:15:15.890-03:00  INFO 87290 --- [streamingData] [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+2025-10-13T13:15:15.898-03:00 ERROR 87290 --- [streamingData] [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+A[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  06:25 min
+[INFO] Finished at: 2025-10-13T13:17:51-03:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.springframework.boot:spring-boot-maven-plugin:3.5.6:run (default-cli) on project streamingData: Process terminated with exit code: 137 -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException
+ing the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException
