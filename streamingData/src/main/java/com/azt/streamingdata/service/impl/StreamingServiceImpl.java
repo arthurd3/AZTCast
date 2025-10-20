@@ -1,6 +1,5 @@
 package com.azt.streamingdata.service.impl;
 
-import com.azt.streamingdata.model.Video;
 import com.azt.streamingdata.service.IStreamingService;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
@@ -9,7 +8,6 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.io.BufferedReader;
 import java.io.File;
