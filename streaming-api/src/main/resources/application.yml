@@ -37,17 +37,35 @@ aztcast:
       video-codec: libx264
       timeout: 30m
       segment-duration: 4s
+      # Rungs are spaced ~1.6-1.8x apart so there is a usable step for roughly every
+      # doubling of bandwidth; too-close rungs cost encoding time and buy no adaptation.
+      # Order matters only for readability — the player picks by BANDWIDTH.
       renditions:
+        - name: 1080p
+          width: 1920
+          height: 1080
+          video-bitrate-kbps: 5000
+          audio-bitrate-kbps: 128
         - name: 720p
           width: 1280
           height: 720
           video-bitrate-kbps: 3000
           audio-bitrate-kbps: 128
+        - name: 480p
+          width: 854
+          height: 480
+          video-bitrate-kbps: 1500
+          audio-bitrate-kbps: 96
+        - name: 360p
+          width: 640
+          height: 360
+          video-bitrate-kbps: 900
+          audio-bitrate-kbps: 96
         - name: 240p
           width: 426
           height: 240
-          video-bitrate-kbps: 800
-          audio-bitrate-kbps: 128
+          video-bitrate-kbps: 500
+          audio-bitrate-kbps: 64
 
     torrent:
       video-extensions: [mp4, mkv, avi, mov, m4v, webm]
@@ -56,8 +74,13 @@ aztcast:
 
     transcoding:
       pool:
-        core-size: 2
-        max-size: 4
+        # One ffmpeg process now encodes all five rungs at once, so a single job uses
+        # far more CPU and out-of-heap memory than the old one-rung-at-a-time loop did.
+        # max-size is concurrent *videos*; it came down from 4 when the ladder went from
+        # two sequential rungs to five parallel ones. Raise it and the container memory
+        # limit together — docs/runbook.md records the exit-137 this causes.
+        core-size: 1
+        max-size: 2
         queue-capacity: 500
         thread-name-prefix: "transcode-"
 

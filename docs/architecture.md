@@ -131,8 +131,6 @@ A mismatch in any of them is a silent 404 on every segment.
 - **No authentication.** Anyone who can reach the API can make the server
   download arbitrary torrents.
 - **Job state is in memory** and lost on restart.
-- Transcoding is sequential per video: each rung of the ladder runs after the
-  previous one, on a single pool thread.
 
 ### Corrected: HTTP Range support
 

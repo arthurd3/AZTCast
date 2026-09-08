@@ -2,9 +2,12 @@ package com.azt.streaming.transcoding;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willAnswer;
 
+import com.azt.streaming.transcoding.domain.MediaProbe;
 import com.azt.streaming.transcoding.domain.MediaTranscoder;
+import com.azt.streaming.transcoding.domain.ProbedVideo;
 import com.azt.streaming.transcoding.infrastructure.ProcessRunner;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicReference;
@@ -63,8 +66,17 @@ class AsyncTranscodingIntegrationTest {
 
     @MockitoBean private ProcessRunner processRunner;
 
+    /**
+     * Mocked at the port, not at {@link ProcessRunner}: this test is about where the work runs, and
+     * the transcoder now probes before it encodes. Stubbing the transport instead would make the
+     * test depend on ffprobe's output format for no reason.
+     */
+    @MockitoBean private MediaProbe mediaProbe;
+
     @Test
     void transcodingRunsOnTheNamedTranscodingExecutor() {
+        given(mediaProbe.probe(any())).willReturn(new ProbedVideo(true, true, "Main", 31));
+
         AtomicReference<String> workerThread = new AtomicReference<>();
         willAnswer(
                         invocation -> {

@@ -12,9 +12,18 @@ investigation that existed.
 - Prefer **H.264 (avc1) + AAC (mp4a.40.2)**. They are the pairing every browser
   supports.
 - Make sure `master.m3u8`'s `CODECS` attribute matches what the segments
-  actually contain. *(Fixed: the master playlist used to advertise no `CODECS`
-  attribute at all, forcing players to probe the first segment. It now emits
-  `avc1.4d001f,mp4a.40.2`, verified against a real encode with ffprobe.)*
+  actually contain. *(Fixed twice. First the master advertised no `CODECS` at
+  all, forcing players to probe the first segment. Then it advertised one
+  hardcoded `avc1.4d001f` for every rung — which is only correct at 720p,
+  because the H.264 **level follows the resolution and bitrate the encoder
+  settled on**, not what the command asked for. Measured: 1080p is level 4.0,
+  480p and 360p are 3.0, 240p is 2.1. It is now derived per rung by probing the
+  encoder's own output, so it cannot drift from reality again.)*
+
+  A corollary worth knowing when reading old encodes: `-profile:v` must be set
+  **per video stream** (`-profile:v:0`, `-profile:v:1`, …). Set globally or
+  omitted, `libopenh264` falls back to Constrained Baseline and logs only a
+  warning — so the stream is Baseline while the playlist claims Main.
 - Check the **MIME types the server sends**:
 
   | File        | Content-Type                    |

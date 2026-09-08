@@ -2,6 +2,7 @@ package com.azt.streaming.transcoding.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.azt.streaming.transcoding.domain.EncodedRendition;
 import com.azt.streaming.transcoding.domain.HlsRendition;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -12,10 +13,11 @@ import org.junit.jupiter.api.io.TempDir;
 
 class MasterPlaylistWriterTest {
 
-    private static final List<HlsRendition> LADDER =
-            List.of(
-                    new HlsRendition("720p", 1280, 720, 3000, 128),
-                    new HlsRendition("240p", 426, 240, 800, 128));
+    // Two rungs whose measured codec strings differ — which is the whole point: a single hardcoded
+    // value was correct only for 720p.
+    private static final List<EncodedRendition> LADDER = List.of(
+            new EncodedRendition(new HlsRendition("720p", 1280, 720, 3000, 128), "avc1.4d001f,mp4a.40.2"),
+            new EncodedRendition(new HlsRendition("240p", 426, 240, 800, 128), "avc1.4d0015,mp4a.40.2"));
 
     private final MasterPlaylistWriter writer = new MasterPlaylistWriter();
 
@@ -30,8 +32,14 @@ class MasterPlaylistWriterTest {
     }
 
     @Test
-    void advertisesCodecsSoPlayersNeedNotProbeTheFirstSegment() {
-        assertThat(writer.render(LADDER)).contains("CODECS=\"avc1.4d001f,mp4a.40.2\"");
+    void advertisesTheCodecsMeasuredForEachRungRatherThanOneConstant() {
+        // 240p really does encode to level 2.1, not 3.1. Advertising 3.1 for it — as a single
+        // hardcoded string did — tells the player to provision a decoder for a stream it will
+        // never receive, and mis-sizes its capability check.
+        String playlist = writer.render(LADDER);
+
+        assertThat(playlist).contains("CODECS=\"avc1.4d001f,mp4a.40.2\"");
+        assertThat(playlist).contains("CODECS=\"avc1.4d0015,mp4a.40.2\"");
     }
 
     @Test
@@ -47,7 +55,8 @@ class MasterPlaylistWriterTest {
     void emitsOneStreamInfPerRungInLadderOrder() {
         List<String> lines = writer.render(LADDER).lines().toList();
 
-        assertThat(lines).startsWith("#EXTM3U", "#EXT-X-VERSION:3");
+        // Version 7, not 3: the variants are fMP4 and use EXT-X-MAP.
+        assertThat(lines).startsWith("#EXTM3U", "#EXT-X-VERSION:7", "#EXT-X-INDEPENDENT-SEGMENTS");
         assertThat(lines.stream().filter(l -> l.startsWith("#EXT-X-STREAM-INF")).count()).isEqualTo(2);
         assertThat(lines.indexOf("720p.m3u8")).isLessThan(lines.indexOf("240p.m3u8"));
         assertThat(writer.render(LADDER)).contains("RESOLUTION=1280x720", "RESOLUTION=426x240");
@@ -57,9 +66,6 @@ class MasterPlaylistWriterTest {
     void writesTheMasterUnderTheVideoDirectory(@TempDir Path videoDirectory) throws IOException {
         writer.write(videoDirectory, LADDER);
 
-        assertThat(videoDirectory.resolve("master.m3u8"))
-                .exists()
-                .content()
-                .isEqualTo(writer.render(LADDER));
+        assertThat(videoDirectory.resolve("master.m3u8")).exists().content().isEqualTo(writer.render(LADDER));
     }
 }

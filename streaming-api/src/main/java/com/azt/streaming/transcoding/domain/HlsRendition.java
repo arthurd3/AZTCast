@@ -22,16 +22,6 @@ public record HlsRendition(
     /** Rate-control buffer, 1.5x the target bitrate. */
     private static final double BUFSIZE_FACTOR = 1.5;
 
-    /**
-     * RFC 6381 codec string matching the encoder flags used for every rung: H.264 Main profile
-     * ({@code 4d}), no constraint flags ({@code 00}), level 3.1 ({@code 1f}), plus AAC-LC.
-     *
-     * <p>The master playlist previously carried no CODECS attribute at all. Players then have to
-     * probe the first segment to discover what they are being handed, which is one documented cause
-     * of the {@code bufferAppend} errors this project was chasing — see docs/troubleshooting-hls.md.
-     */
-    private static final String CODECS = "avc1.4d001f,mp4a.40.2";
-
     public String resolution() {
         return width + "x" + height;
     }
@@ -49,9 +39,27 @@ public record HlsRendition(
         return name + ".m3u8";
     }
 
-    /** ffmpeg segment filename pattern for this rung, relative to the video folder. */
+    /**
+     * ffmpeg segment filename pattern for this rung, relative to the video folder.
+     *
+     * <p>In the command itself this is templated as {@code %v_%03d.m4s} and ffmpeg substitutes
+     * {@code %v} from the {@code name:} key of {@code -var_stream_map}; the result is exactly this
+     * string. Kept here because it is the name playback will be asked for.
+     */
     public String segmentPattern() {
-        return name + "_%03d.ts";
+        return name + "_%03d.m4s";
+    }
+
+    /**
+     * The CMAF initialisation segment for this rung.
+     *
+     * <p>fMP4 splits what a transport stream repeated in every packet into one header segment plus
+     * the media segments. A variant playlist points at it with {@code EXT-X-MAP}, and without it the
+     * rung is undecodable — so this file is served by the same frozen mapping as everything else,
+     * which is why it too has to be a single path segment.
+     */
+    public String initFileName() {
+        return name + "_init.mp4";
     }
 
     /**
@@ -71,7 +79,4 @@ public record HlsRendition(
         return (videoBitrateKbps + audioBitrateKbps) * 1000;
     }
 
-    public String codecs() {
-        return CODECS;
-    }
 }
