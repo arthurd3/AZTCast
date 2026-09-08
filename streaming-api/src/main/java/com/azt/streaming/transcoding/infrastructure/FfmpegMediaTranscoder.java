@@ -2,6 +2,7 @@ package com.azt.streaming.transcoding.infrastructure;
 
 import com.azt.streaming.shared.config.AsyncConfiguration;
 import com.azt.streaming.shared.config.StreamingProperties;
+import com.azt.streaming.shared.storage.MediaStorage;
 import com.azt.streaming.transcoding.domain.HlsRendition;
 import com.azt.streaming.transcoding.domain.MediaTranscoder;
 import com.azt.streaming.transcoding.domain.TranscodingException;
@@ -27,7 +28,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class FfmpegMediaTranscoder implements MediaTranscoder {
 
-    private final Path hlsRoot;
+    private final MediaStorage mediaStorage;
     private final Duration timeout;
     private final List<HlsRendition> ladder;
     private final FfmpegCommandBuilder commandBuilder;
@@ -36,10 +37,11 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
 
     public FfmpegMediaTranscoder(
             StreamingProperties properties,
+            MediaStorage mediaStorage,
             FfmpegCommandBuilder commandBuilder,
             ProcessRunner processRunner,
             MasterPlaylistWriter masterPlaylistWriter) {
-        this.hlsRoot = properties.storage().hlsDir();
+        this.mediaStorage = mediaStorage;
         this.timeout = properties.ffmpeg().timeout();
         this.ladder = properties.ffmpeg().renditions().stream().map(FfmpegMediaTranscoder::toRendition).toList();
         this.commandBuilder = commandBuilder;
@@ -52,10 +54,8 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
     public CompletableFuture<Void> transcodeToHls(Path inputFile, String videoId) {
         log.info("Transcoding videoId {} from {}", videoId, inputFile);
 
-        Path videoDirectory = hlsRoot.resolve(videoId);
+        Path videoDirectory = mediaStorage.hlsDirectoryFor(videoId);
         try {
-            Files.createDirectories(videoDirectory);
-
             for (HlsRendition rendition : ladder) {
                 log.info("Encoding {} for videoId {}", rendition.name(), videoId);
                 processRunner.run(commandBuilder.build(inputFile, videoDirectory, rendition), timeout);

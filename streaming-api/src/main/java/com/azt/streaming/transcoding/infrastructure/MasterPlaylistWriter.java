@@ -1,5 +1,6 @@
 package com.azt.streaming.transcoding.infrastructure;
 
+import com.azt.streaming.shared.storage.MediaStorage;
 import com.azt.streaming.transcoding.domain.HlsRendition;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -10,8 +11,6 @@ import org.springframework.stereotype.Component;
 /** Writes the HLS master playlist that advertises the ladder to the player. */
 @Component
 public class MasterPlaylistWriter {
-
-    public static final String MASTER_PLAYLIST = "master.m3u8";
 
     /**
      * Renders the master playlist for {@code renditions} into {@code videoDirectory}.
@@ -39,6 +38,6 @@ public class MasterPlaylistWriter {
     }
 
     public void write(Path videoDirectory, List<HlsRendition> renditions) throws IOException {
-        Files.writeString(videoDirectory.resolve(MASTER_PLAYLIST), render(renditions));
+        Files.writeString(videoDirectory.resolve(MediaStorage.MASTER_PLAYLIST), render(renditions));
     }
 }

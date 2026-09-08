@@ -1,7 +1,7 @@
 package com.azt.streaming.ingestion.application;
 
 import com.azt.streaming.acquisition.domain.TorrentDownloader;
-import com.azt.streaming.shared.config.StreamingProperties;
+import com.azt.streaming.shared.storage.MediaStorage;
 import com.azt.streaming.transcoding.domain.MediaTranscoder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,14 +15,14 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class IngestionService {
 
-    private final StreamingProperties properties;
+    private final MediaStorage mediaStorage;
     private final TorrentDownloader torrentDownloader;
     private final MediaTranscoder mediaTranscoder;
 
     public String startIngestion(final String magnetUrl) {
 
         final String videoId = UUID.randomUUID().toString();
-        final Path downloadPath = properties.storage().downloadsDir().resolve(videoId);
+        final Path downloadPath = mediaStorage.downloadDirectoryFor(videoId);
 
         log.info("Orchestrating new stream for videoId: {}", videoId);
 
