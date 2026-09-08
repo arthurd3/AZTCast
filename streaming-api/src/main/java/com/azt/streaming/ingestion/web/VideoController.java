@@ -2,6 +2,7 @@ package com.azt.streaming.ingestion.web;
 
 import com.azt.streaming.ingestion.application.IngestionService;
 import com.azt.streaming.ingestion.web.dto.CreateStreamJobRequest;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -15,7 +16,7 @@ public class VideoController {
 
 
     @PostMapping("/download")
-    public ResponseEntity<String> downloadTorrentLink(@RequestBody final CreateStreamJobRequest request) {
+    public ResponseEntity<String> downloadTorrentLink(@Valid @RequestBody final CreateStreamJobRequest request) {
 
         String videoId = ingestionService.startIngestion(request.magnetUrl());
 
