@@ -13,10 +13,14 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
  * </em> on the main class. Note that removing both would silently turn every {@code @Async} call
  * into a blocking one, so the ingestion request would hang for the whole torrent download.
  *
- * <p>The bean is deliberately <em>not</em> called {@code taskExecutor} any more. That is the name
- * {@code AsyncAnnotationBeanPostProcessor} resolves by default, so owning it meant this pool also
- * replaced Boot's auto-configured executor for every other async concern in the container. It is
- * named explicitly instead, and {@code @Async} call sites qualify it by name.
+ * <p>The bean is deliberately <em>not</em> called {@code taskExecutor} any more, and call sites
+ * qualify it by name. To be precise about what that does and does not buy: Boot's
+ * {@code applicationTaskExecutor} is suppressed either way, because
+ * {@code TaskExecutionAutoConfiguration} backs off on {@code @ConditionalOnMissingBean(Executor
+ * .class)} — a condition on type, not on name (verified: this is the only Executor in the context).
+ * What the explicit name buys is that this pool stops being the silent default for every future
+ * {@code @Async} or {@code @Scheduled} method: anything that wants these threads has to say so, and
+ * a second executor can be introduced later without quietly re-pointing existing call sites.
  */
 @Configuration
 @EnableAsync
