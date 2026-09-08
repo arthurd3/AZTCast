@@ -100,6 +100,64 @@ select {
   color: var(--color-text-muted);
 }
 
+/* Ingestion progress */
+/* A block, so it sits under the input rather than flowing beside the button. */
+.job-progress {
+  margin-top: var(--space-md);
+}
+
+.job-progress:not(.hidden) {
+  display: block;
+}
+
+/* The step list is inline-block so its markers line up as a column, while the block
+   itself stays centred in the surrounding centred layout. */
+.steps {
+  display: inline-block;
+  text-align: left;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.step {
+  padding: 2px 0;
+  font-size: 14px;
+}
+
+.step.pending {
+  color: var(--color-disabled);
+}
+
+.step.active {
+  color: var(--color-loading);
+  font-weight: bold;
+}
+
+.step.done {
+  color: var(--color-success);
+}
+
+.step.failed {
+  color: var(--color-error);
+  font-weight: bold;
+}
+
+.step-reason {
+  color: var(--color-error);
+  font-size: 13px;
+  margin: var(--space-sm) auto 0;
+  max-width: 480px;
+  word-break: break-word;
+}
+
+.step-id {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  margin: 4px 0 0;
+  font-family: monospace;
+}
+
 /* Diagnostics page */
 .diagnostics {
   text-align: left;

@@ -11,7 +11,20 @@
       <h1>🎬 AZTCast — Player Adaptativo</h1>
 
       <div class="controls">
-        <label for="videoId">Video ID:</label><br /><br />
+        <label for="magnetUrl">Enviar um torrent:</label><br /><br />
+        <input
+          type="text"
+          id="magnetUrl"
+          placeholder="magnet:?xt=urn:btih:…"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button id="ingestBtn" type="button">Enviar</button>
+        <div id="jobProgress" class="job-progress hidden"></div>
+      </div>
+
+      <div class="controls">
+        <label for="videoId">Ou tocar um vídeo já processado:</label><br /><br />
         <input
           type="text"
           id="videoId"

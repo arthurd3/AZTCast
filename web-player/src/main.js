@@ -1,17 +1,25 @@
 import './styles/main.css';
-import { masterPlaylistUrl } from './api/streamClient.js';
+import { createStreamJob, masterPlaylistUrl } from './api/streamClient.js';
+import { pollJob } from './api/jobPoller.js';
 import { createHlsPlayer } from './player/hlsPlayer.js';
 import { createQualitySelector } from './player/qualitySelector.js';
+import { createJobProgress } from './ui/jobProgress.js';
 import { createStatusBanner } from './ui/statusBanner.js';
 import { createVideoInfo } from './ui/videoInfo.js';
 
 const videoIdInput = document.getElementById('videoId');
 const loadButton = document.getElementById('loadBtn');
+const magnetInput = document.getElementById('magnetUrl');
+const ingestButton = document.getElementById('ingestBtn');
 const videoElement = document.getElementById('video');
 const selectElement = document.getElementById('qualitySelect');
 
 const status = createStatusBanner(document.getElementById('status'));
 const videoInfo = createVideoInfo(document.getElementById('videoInfo'));
+const jobProgress = createJobProgress(document.getElementById('jobProgress'));
+
+/** The poll in flight, so starting a second ingestion does not leave the first one running. */
+let activePoll = null;
 
 const player = createHlsPlayer(videoElement, {
   onManifestParsed: () => {
@@ -73,6 +81,59 @@ function loadVideo() {
     loadButton.disabled = false;
   }
 }
+
+async function startIngestion() {
+  const magnetUrl = magnetInput.value.trim();
+  if (!magnetUrl) {
+    status.show('Cole um link magnet.', 'error');
+    return;
+  }
+
+  activePoll?.cancel();
+  ingestButton.disabled = true;
+  jobProgress.clear();
+  status.show('Enviando…', 'loading');
+
+  let job;
+  try {
+    job = await createStreamJob(magnetUrl);
+  } catch (error) {
+    // A 429 arrives here with the server's own detail string, which already says how long to
+    // wait — more useful than anything this layer could invent.
+    status.show(error.message, 'error');
+    ingestButton.disabled = false;
+    return;
+  }
+
+  // The API is idempotent per torrent, so this may be a job that already existed. That is the
+  // right outcome and needs no special case: the id is filled in and the poll picks it up
+  // wherever it happens to be.
+  videoIdInput.value = job.videoId;
+  jobProgress.render(job);
+  status.show('Processando. Isto pode levar alguns minutos.', 'loading');
+
+  activePoll = pollJob(job.videoId, { onUpdate: jobProgress.render });
+  try {
+    const finished = await activePoll.promise;
+    if (finished.status === 'READY') {
+      status.hide();
+      loadVideo();
+    } else {
+      status.show(finished.failureReason ?? 'A ingestão falhou.', 'error');
+    }
+  } catch (error) {
+    status.show(error.message, 'error');
+  } finally {
+    ingestButton.disabled = false;
+  }
+}
+
+ingestButton.addEventListener('click', startIngestion);
+magnetInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    startIngestion();
+  }
+});
 
 loadButton.addEventListener('click', loadVideo);
 videoIdInput.addEventListener('keydown', (event) => {
