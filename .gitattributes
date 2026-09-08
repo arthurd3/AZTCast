@@ -1,0 +1,26 @@
+# Normalise line endings on checkin; check out LF everywhere.
+* text=auto eol=lf
+
+# Scripts that must keep a specific ending regardless of platform.
+mvnw    text eol=lf
+*.sh    text eol=lf
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+
+# Binaries — never diff, never normalise.
+*.jar   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.mp4   binary
+*.mkv   binary
+*.avi   binary
+*.mov   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+
+# Lockfiles: generated, keep them out of diff review noise.
+package-lock.json linguist-generated=true -diff
