@@ -2,41 +2,65 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
+
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.6</version>
-        <relativePath/> <!-- lookup parent from repository -->
+        <version>3.5.16</version>
+        <relativePath/>
     </parent>
+
     <groupId>com.azt</groupId>
-    <artifactId>streamingData</artifactId>
+    <artifactId>streaming-api</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>streamingData</name>
-    <description>streamingData</description>
+    <name>streaming-api</name>
+    <description>AZTCast streaming API: magnet acquisition, HLS transcoding and playback</description>
+
     <properties>
         <java.version>21</java.version>
+        <bt.version>1.10</bt.version>
+        <springdoc.version>2.8.6</springdoc.version>
+        <archunit.version>1.4.1</archunit.version>
     </properties>
+
     <dependencies>
+        <!-- Web layer -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>${springdoc.version}</version>
+        </dependency>
+
+        <!-- BitTorrent acquisition -->
+        <dependency>
             <groupId>com.github.atomashpolskiy</groupId>
             <artifactId>bt-core</artifactId>
-            <version>1.10</version>
+            <version>${bt.version}</version>
         </dependency>
         <dependency>
             <groupId>com.github.atomashpolskiy</groupId>
             <artifactId>bt-http-tracker-client</artifactId>
-            <version>1.10</version>
+            <version>${bt.version}</version>
         </dependency>
         <dependency>
             <groupId>com.github.atomashpolskiy</groupId>
             <artifactId>bt-dht</artifactId>
-            <version>1.10</version>
+            <version>${bt.version}</version>
         </dependency>
 
+        <!-- Tooling -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
@@ -44,12 +68,26 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Test -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-validation</artifactId>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <version>${archunit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 
@@ -58,23 +96,39 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
                 <configuration>
-                    <source>21</source>
-                    <target>21</target>
+                    <!--
+                      Release level comes from the parent's ${java.version}.
+                      annotationProcessorPaths is still required: since JDK 21
+                      javac no longer discovers processors from the classpath.
+                    -->
                     <annotationProcessorPaths>
                         <path>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
-                            <version>1.18.30</version>
+                            <version>${lombok.version}</version>
+                        </path>
+                        <path>
+                            <groupId>org.springframework.boot</groupId>
+                            <artifactId>spring-boot-configuration-processor</artifactId>
+                            <version>${project.parent.version}</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
             </plugin>
+
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
+                    <!-- Layered jar: dependencies cache separately from app code in Docker. -->
+                    <layers>
+                        <enabled>true</enabled>
+                    </layers>
+                    <!-- `mvn spring-boot:run` develops against the local profile; the jar does not. -->
+                    <profiles>
+                        <profile>local</profile>
+                    </profiles>
                     <excludes>
                         <exclude>
                             <groupId>org.projectlombok</groupId>
@@ -85,5 +139,4 @@
             </plugin>
         </plugins>
     </build>
-
 </project>
