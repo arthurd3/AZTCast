@@ -1,6 +1,7 @@
 package com.azt.streaming.shared.error;
 
 import com.azt.streaming.acquisition.domain.TorrentDownloadException;
+import com.azt.streaming.ingestion.domain.StreamJobNotFoundException;
 import com.azt.streaming.playback.domain.AssetNotFoundException;
 import com.azt.streaming.transcoding.domain.TranscodingException;
 import jakarta.validation.ConstraintViolation;
@@ -37,6 +38,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         // every attempt, and it is not an error condition.
         log.debug("Asset not found: {}", e.getMessage());
         return problem(HttpStatus.NOT_FOUND, ProblemTypes.ASSET_NOT_FOUND, "Asset not found", e.getMessage());
+    }
+
+    @ExceptionHandler(StreamJobNotFoundException.class)
+    public ProblemDetail handleJobNotFound(StreamJobNotFoundException e) {
+        return problem(HttpStatus.NOT_FOUND, ProblemTypes.JOB_NOT_FOUND, "Job not found", e.getMessage());
     }
 
     @ExceptionHandler(TorrentDownloadException.class)
