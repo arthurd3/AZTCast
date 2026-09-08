@@ -32,6 +32,9 @@ aztcast:
     ffmpeg:
       binary: ffmpeg
       probe-binary: ffprobe
+      # Any H.264 encoder. Distros shipping a patent-free ffmpeg have libopenh264
+      # instead of libx264; both yield Main@3.1, matching the advertised CODECS.
+      video-codec: libx264
       timeout: 30m
       segment-duration: 4s
       renditions:

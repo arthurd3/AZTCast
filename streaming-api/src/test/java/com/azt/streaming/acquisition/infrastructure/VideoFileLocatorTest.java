@@ -2,18 +2,17 @@ package com.azt.streaming.acquisition.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.azt.streaming.shared.config.StreamingProperties;
+import com.azt.streaming.support.PropertiesFixture;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class VideoFileLocatorTest {
 
-    private final VideoFileLocator locator = new VideoFileLocator(propertiesWith("mp4", "mkv"));
+    private final VideoFileLocator locator = new VideoFileLocator(PropertiesFixture.defaults().videoExtensions(List.of("mp4", "mkv")).build());
 
     @Test
     void findsAVideoNestedInsideAFolder(@TempDir Path root) throws IOException {
@@ -68,15 +67,4 @@ class VideoFileLocatorTest {
         return Files.write(path, new byte[bytes]);
     }
 
-    private static StreamingProperties propertiesWith(String... extensions) {
-        return new StreamingProperties(
-                new StreamingProperties.Storage(Path.of("target/test/downloads"), Path.of("target/test/hls")),
-                new StreamingProperties.Ffmpeg(
-                        "/bin/true", "/bin/true", Duration.ofSeconds(1), Duration.ofSeconds(4), List.of()),
-                new StreamingProperties.Torrent(
-                        List.of(extensions), Duration.ofSeconds(1), Duration.ofSeconds(1)),
-                new StreamingProperties.Transcoding(
-                        new StreamingProperties.Transcoding.Pool(1, 1, 1, "test-")),
-                new StreamingProperties.Web(List.of()));
-    }
 }

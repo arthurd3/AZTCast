@@ -6,6 +6,7 @@ aztcast:
       hls-dir: ${java.io.tmpdir}/aztcast-test/hls
     ffmpeg:
       binary: /bin/true
+      video-codec: libx264
       probe-binary: /bin/true
       timeout: 10s
       segment-duration: 4s

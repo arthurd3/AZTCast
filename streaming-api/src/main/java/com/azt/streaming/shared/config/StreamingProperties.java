@@ -36,10 +36,19 @@ public record StreamingProperties(
      */
     public record Storage(@NotNull Path downloadsDir, @NotNull Path hlsDir) {}
 
-    /** The external ffmpeg process and the HLS ladder it produces. */
+    /**
+     * The external ffmpeg process and the HLS ladder it produces.
+     *
+     * <p>{@code videoCodec} is configurable because {@code libx264} is not universally present:
+     * distributions that ship a patent-free build (Fedora's default, for one) carry
+     * {@code libopenh264} instead. Both produce H.264 Main@3.1, so the CODECS attribute the master
+     * playlist advertises stays correct either way — but a hardcoded encoder name fails at runtime
+     * on any host that lacks it.
+     */
     public record Ffmpeg(
             @NotBlank String binary,
             @NotBlank String probeBinary,
+            @NotBlank String videoCodec,
             @NotNull Duration timeout,
             @NotNull Duration segmentDuration,
             @NotEmpty List<@Valid Rendition> renditions) {}
