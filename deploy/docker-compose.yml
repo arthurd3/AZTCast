@@ -1,0 +1,51 @@
+# Full stack: nginx serves the player and proxies /api to the API, so everything
+# the browser touches is same-origin and no CORS configuration is needed.
+#
+# Run from the repository root:
+#   docker compose -f deploy/docker-compose.yml up --build
+#
+# The player is then on http://localhost:8000 (or $WEB_PORT).
+
+name: aztcast
+
+services:
+  streaming-api:
+    build:
+      context: ..
+      dockerfile: streaming-api/Dockerfile
+    image: aztcast/streaming-api:dev
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    volumes:
+      - media:/var/lib/aztcast
+    # Sized for the JVM plus concurrent ffmpeg processes. ffmpeg's memory is
+    # outside the heap, and the pool's max-size is how many can run at once —
+    # raise both together or the container gets OOM-killed (exit 137).
+    deploy:
+      resources:
+        limits:
+          memory: 3g
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health/readiness"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  web-player:
+    build:
+      context: ..
+      dockerfile: web-player/Dockerfile
+    image: aztcast/web-player:dev
+    ports:
+      # Override with WEB_PORT if 8000 is taken:  WEB_PORT=8100 docker compose ... up
+      - "${WEB_PORT:-8000}:80"
+    depends_on:
+      streaming-api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  # Downloads and HLS output. Regenerable, but large — delete it deliberately.
+  media:

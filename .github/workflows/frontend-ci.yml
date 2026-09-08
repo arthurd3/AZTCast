@@ -1,0 +1,52 @@
+name: frontend-ci
+
+on:
+  push:
+    branches: [main]
+    paths: ['web-player/**', 'deploy/nginx/**', '.github/workflows/frontend-ci.yml']
+  pull_request:
+    paths: ['web-player/**', 'deploy/nginx/**', '.github/workflows/frontend-ci.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: web-player
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web-player/package-lock.json
+
+      # ci, not install: the lockfile is the point — it is what replaced an
+      # unpinned hls.js loaded from a CDN.
+      - name: Install
+        run: npm ci --no-fund --no-audit
+
+      - name: Lint
+        run: npx eslint .
+
+      - name: Check formatting
+        run: npx prettier --check .
+
+      - name: Build
+        run: npm run build
+
+      - name: Fail if a backend URL was hardcoded again
+        run: |
+          if grep -rn 'localhost:8080' src/ index.html diagnostics.html; then
+            echo "::error::Hardcoded backend URL. Use API_BASE_URL from src/config.js."
+            exit 1
+          fi

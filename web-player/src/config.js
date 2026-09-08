@@ -5,7 +5,9 @@
  * proxies /api in development and nginx does the same in production, so the browser
  * never makes a cross-origin request and the API needs no CORS allowlist.
  *
- * This replaces a hardcoded `http://localhost:8080` that appeared in two files, could
- * not be deployed anywhere, and would have been blocked as mixed content over HTTPS.
+ * This replaces an absolute backend origin that was hardcoded in two files: the app
+ * could not be deployed anywhere else, and it would have been blocked as mixed
+ * content when served over HTTPS. CI greps for that literal to keep it from coming
+ * back, so do not write it here either.
  */
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
