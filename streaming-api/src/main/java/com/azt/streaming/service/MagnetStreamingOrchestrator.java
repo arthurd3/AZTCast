@@ -1,14 +1,13 @@
 package com.azt.streaming.service;
 
 import com.azt.streaming.controller.request.MagnetUrl;
+import com.azt.streaming.shared.config.StreamingProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.UUID;
 
 @Service
@@ -16,16 +15,14 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class MagnetStreamingOrchestrator {
 
-    @Value("${dir.files.download}")
-    private String DOWNLOAD_DIR;
-
+    private final StreamingProperties properties;
     private final ITorrentService torrentService;
     private final IStreamingService streamingService;
 
     public String processMagnetLink(final MagnetUrl torrentLink)  {
 
         final String videoId = UUID.randomUUID().toString();
-        final Path downloadPath = Paths.get(DOWNLOAD_DIR, videoId);
+        final Path downloadPath = properties.storage().downloadsDir().resolve(videoId);
 
         log.info("Orchestrating new stream for videoId: {}", videoId);
 

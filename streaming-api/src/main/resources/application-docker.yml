@@ -1,0 +1,9 @@
+# Container: media lives on a named volume, and nginx fronts both services so
+# every request the browser makes is same-origin.
+aztcast:
+  streaming:
+    storage:
+      downloads-dir: /var/lib/aztcast/downloads
+      hls-dir: /var/lib/aztcast/hls
+    web:
+      allowed-origins: []

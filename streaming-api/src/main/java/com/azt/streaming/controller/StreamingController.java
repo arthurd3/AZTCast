@@ -1,7 +1,7 @@
 package com.azt.streaming.controller;
 
+import com.azt.streaming.shared.config.StreamingProperties;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.MediaType;
@@ -9,19 +9,17 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.nio.file.Path;
-import java.nio.file.Paths;
 
 @RestController
 @RequestMapping("/api/v1/stream")
 @RequiredArgsConstructor
 public class StreamingController {
 
-    @Value("${dir.files.hls}")
-    private String videoDir;
+    private final StreamingProperties properties;
 
     @GetMapping("/{videoId}/master.m3u8")
     public ResponseEntity<Resource> getMasterPlaylist(@PathVariable String videoId) {
-        Path masterPlaylistPath = Paths.get(videoDir, videoId, "master.m3u8");
+        Path masterPlaylistPath = properties.storage().hlsDir().resolve(videoId).resolve("master.m3u8");
         Resource resource = new FileSystemResource(masterPlaylistPath);
 
         if (!resource.exists()) {
@@ -34,7 +32,7 @@ public class StreamingController {
 
     @GetMapping("/{videoId}/{file}")
     public ResponseEntity<Resource> getStreamFile(@PathVariable String videoId, @PathVariable String file) {
-        Path streamFilePath = Paths.get(videoDir, videoId, file);
+        Path streamFilePath = properties.storage().hlsDir().resolve(videoId).resolve(file);
         Resource resource = new FileSystemResource(streamFilePath);
         
         if (!resource.exists()) {

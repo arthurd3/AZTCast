@@ -1,9 +1,11 @@
 package com.azt.streaming.service.impl;
 
 import com.azt.streaming.service.IStreamingService;
+import com.azt.streaming.shared.config.AsyncConfiguration;
+import com.azt.streaming.shared.config.StreamingProperties;
+import lombok.RequiredArgsConstructor;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.scheduling.annotation.Async;
@@ -15,7 +17,6 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
@@ -23,14 +24,14 @@ import java.util.concurrent.CompletableFuture;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class StreamingServiceImpl implements IStreamingService {
 
-    @Value("${dir.files.hls}")
-    private String HLS_DIR;
+    private final StreamingProperties properties;
 
     @PostConstruct
     public void init(){
-        File file = new File(HLS_DIR);
+        File file = properties.storage().hlsDir().toFile();
         if(!file.exists()){
             file.mkdir();
             System.out.println("Directory created");
@@ -60,7 +61,7 @@ public class StreamingServiceImpl implements IStreamingService {
 
     @Override
     public Resource getVideoPlaylist() {
-        File masterPlaylistFile = new File(HLS_DIR + File.separator + "master.m3u8");
+        File masterPlaylistFile = properties.storage().hlsDir().resolve("master.m3u8").toFile();
         if (!masterPlaylistFile.exists()) {
             throw new RuntimeException("Master playlist not found");
         }
@@ -69,12 +70,12 @@ public class StreamingServiceImpl implements IStreamingService {
 
 
     @Override
-    @Async
+    @Async(AsyncConfiguration.TRANSCODING_EXECUTOR)
     public CompletableFuture<Void> processVideoAsync(Path inputFile, String videoId) {
         log.info("Starting HLS processing for videoId: {} from file: {}", videoId, inputFile);
 
         try {
-            Path hlsRoot = Paths.get(HLS_DIR);
+            Path hlsRoot = properties.storage().hlsDir();
             Path videoFolder = hlsRoot.resolve(videoId);
             Files.createDirectories(videoFolder);
 
