@@ -68,6 +68,7 @@ class RealFfmpegLadderTest {
                 new FfmpegCommandBuilder(properties),
                 processRunner,
                 new MasterPlaylistWriter(),
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
                 properties);
 
         transcoder.transcodeToHls(source, "vid").join();

@@ -9,6 +9,8 @@ import com.azt.streaming.transcoding.domain.MediaProbe;
 import com.azt.streaming.transcoding.domain.MediaTranscoder;
 import com.azt.streaming.transcoding.domain.ProbedVideo;
 import com.azt.streaming.transcoding.domain.TranscodingException;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -31,6 +33,7 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
     private final MasterPlaylistWriter masterPlaylistWriter;
     private final List<HlsRendition> ladder;
     private final Duration timeout;
+    private final MeterRegistry meterRegistry;
 
     public FfmpegMediaTranscoder(
             MediaStorage mediaStorage,
@@ -38,12 +41,14 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
             FfmpegCommandBuilder commandBuilder,
             ProcessRunner processRunner,
             MasterPlaylistWriter masterPlaylistWriter,
+            MeterRegistry meterRegistry,
             StreamingProperties properties) {
         this.mediaStorage = mediaStorage;
         this.mediaProbe = mediaProbe;
         this.commandBuilder = commandBuilder;
         this.processRunner = processRunner;
         this.masterPlaylistWriter = masterPlaylistWriter;
+        this.meterRegistry = meterRegistry;
         this.timeout = properties.ffmpeg().timeout();
         this.ladder = properties.ffmpeg().renditions().stream()
                 .map(r -> new HlsRendition(r.name(), r.width(), r.height(), r.videoBitrateKbps(), r.audioBitrateKbps()))
@@ -54,6 +59,12 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
     @Async(AsyncConfiguration.TRANSCODING_EXECUTOR)
     public CompletableFuture<Void> transcodeToHls(Path inputFile, String videoId) {
         log.info("Transcoding videoId {} from {}", videoId, inputFile);
+
+        // Timed because the ladder went from two sequential rungs to five in one pass: whether that
+        // trade is paying off is a question about wall-clock time per encode, and there was no way
+        // to answer it. Tagged by outcome so a fast failure cannot be mistaken for a fast success.
+        Timer.Sample sample = Timer.start(meterRegistry);
+        String outcome = "failure";
 
         Path videoDirectory = mediaStorage.hlsDirectoryFor(videoId);
         try {
@@ -79,9 +90,16 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
             masterPlaylistWriter.write(videoDirectory, encoded);
 
             log.info("Transcoding complete for videoId {}", videoId);
+            outcome = "success";
             return CompletableFuture.completedFuture(null);
         } catch (IOException e) {
             throw new TranscodingException("Failed to write HLS output for videoId " + videoId, e);
+        } finally {
+            sample.stop(Timer.builder("aztcast.transcode")
+                    .description("Wall-clock time to encode a full ladder")
+                    .tag("outcome", outcome)
+                    .tag("rungs", String.valueOf(ladder.size()))
+                    .register(meterRegistry));
         }
     }
 

@@ -67,6 +67,7 @@ class IngestionServiceTest {
                         mediaTranscoder,
                         jobRepository,
                         ALWAYS_CLAIMS,
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
                         Clock.fixed(Instant.parse("2026-09-08T12:00:00Z"), ZoneOffset.UTC));
         // lenient: the lookup-only test never starts an ingestion, so it never uses this.
         Mockito.lenient()

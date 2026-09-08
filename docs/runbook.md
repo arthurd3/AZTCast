@@ -123,6 +123,33 @@ The `ffmpeg` component probes the **configured encoder**, not just the binary. A
 `DOWN` with *encoder not available in this ffmpeg build* means the image or host
 has an ffmpeg without `libx264` — see the troubleshooting guide.
 
+## Metrics
+
+`/actuator/prometheus`, in the standard scrape format. **Not exposed through
+nginx** — the stack is unauthenticated, and metrics leak more about a system
+than a health check does. A scraper reaches it inside the compose network at
+`http://streaming-api:8080/actuator/prometheus`.
+
+Beyond the Micrometer defaults:
+
+| Metric | Answers |
+| --- | --- |
+| `aztcast_transcode_seconds{outcome,rungs}` | How long a full ladder takes. Tagged by outcome so a fast failure is not read as a fast success. |
+| `aztcast_ingestion_completed_total{outcome}` | How many ingestions succeed versus fail. |
+| `aztcast_ingestion_deduplicated_total` | Whether magnet deduplication is doing anything — a silent optimisation that stops working looks identical to one that works. |
+
+**Segment egress is not in these metrics**, and that is expected: nginx serves
+those bytes, so they never reach the JVM. They are in the nginx media log
+instead, which records size, duration and whether the offload acted:
+
+```bash
+docker compose -f deploy/docker-compose.yml exec web-player tail -f /var/log/nginx/media.log
+# 172.31.0.1 "GET /api/v1/stream/<id>/1080p_000.m4s HTTP/1.1" 200 2156010 rt=0.013 served_by=nginx-sendfile
+```
+
+`served_by=nginx-sendfile` is the check that matters. If it is ever missing, the
+offload silently stopped and every segment is going back through Tomcat.
+
 ## Verifying a deployment
 
 ```bash

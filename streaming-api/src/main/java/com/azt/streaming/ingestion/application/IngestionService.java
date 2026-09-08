@@ -7,18 +7,18 @@ import com.azt.streaming.ingestion.domain.StreamJobNotFoundException;
 import com.azt.streaming.ingestion.domain.StreamJobRepository;
 import com.azt.streaming.shared.storage.MediaStorage;
 import com.azt.streaming.transcoding.domain.MediaTranscoder;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.util.Optional;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /** Drives the acquire -> transcode pipeline and records how far it got. */
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class IngestionService {
 
     private final MediaStorage mediaStorage;
@@ -27,6 +27,43 @@ public class IngestionService {
     private final StreamJobRepository jobRepository;
     private final MagnetRegistry magnetRegistry;
     private final Clock clock;
+
+    /**
+     * Registered up front rather than looked up per call, so they appear in a scrape from the moment
+     * the service starts. A counter that only exists after it has been incremented reads as "no data"
+     * exactly when you most want to know the value is zero.
+     */
+    private final Counter deduplicated;
+
+    private final Counter ready;
+    private final Counter failed;
+
+    public IngestionService(
+            MediaStorage mediaStorage,
+            TorrentDownloader torrentDownloader,
+            MediaTranscoder mediaTranscoder,
+            StreamJobRepository jobRepository,
+            MagnetRegistry magnetRegistry,
+            MeterRegistry meterRegistry,
+            Clock clock) {
+        this.mediaStorage = mediaStorage;
+        this.torrentDownloader = torrentDownloader;
+        this.mediaTranscoder = mediaTranscoder;
+        this.jobRepository = jobRepository;
+        this.magnetRegistry = magnetRegistry;
+        this.clock = clock;
+        this.deduplicated = Counter.builder("aztcast.ingestion.deduplicated")
+                .description("Ingestions short-circuited because the magnet was already known")
+                .register(meterRegistry);
+        this.ready = Counter.builder("aztcast.ingestion.completed")
+                .description("Ingestions that reached a terminal state")
+                .tag("outcome", "ready")
+                .register(meterRegistry);
+        this.failed = Counter.builder("aztcast.ingestion.completed")
+                .description("Ingestions that reached a terminal state")
+                .tag("outcome", "failed")
+                .register(meterRegistry);
+    }
 
     /**
      * Starts an ingestion and returns immediately with the job in DOWNLOADING.
@@ -42,6 +79,9 @@ public class IngestionService {
         Optional<StreamJob> alreadyRunning = existingIngestionOf(magnetUrl, videoId);
         if (alreadyRunning.isPresent()) {
             log.info("Ingestion for this magnet already exists as {}", alreadyRunning.get().videoId());
+            // Counted because it is the only visible evidence deduplication is doing anything. A
+            // silent optimisation that stops working looks exactly like one that is working.
+            deduplicated.increment();
             return alreadyRunning.get();
         }
 
@@ -66,9 +106,11 @@ public class IngestionService {
                             if (error == null) {
                                 log.info("Ingestion {} ready", videoId);
                                 jobRepository.save(job.ready(clock.instant()));
+                                ready.increment();
                             } else {
                                 log.error("Ingestion {} failed", videoId, error);
                                 jobRepository.save(job.failed(rootCauseMessage(error), clock.instant()));
+                                failed.increment();
                                 // Release on failure, or a magnet that failed once could never be
                                 // retried until its claim expired.
                                 magnetRegistry.release(magnetUrl);

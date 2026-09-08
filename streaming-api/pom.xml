@@ -43,6 +43,14 @@
             <version>${springdoc.version}</version>
         </dependency>
 
+        <!-- Prometheus scrape endpoint. Actuator already collects the metrics; this is
+             only the exposition format. -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
         <!-- Job state, ingestion idempotency and rate limiting.
              Deliberately NOT segment bytes: a value over ~1 MB in Redis displaces
              thousands of useful keys, blocks the single-threaded event loop for every
