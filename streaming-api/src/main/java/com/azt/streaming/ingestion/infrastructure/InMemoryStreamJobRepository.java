@@ -1,4 +1,4 @@
-package com.azt.streaming.ingestion.application;
+package com.azt.streaming.ingestion.infrastructure;
 
 import com.azt.streaming.ingestion.domain.StreamJob;
 import com.azt.streaming.ingestion.domain.StreamJobRepository;

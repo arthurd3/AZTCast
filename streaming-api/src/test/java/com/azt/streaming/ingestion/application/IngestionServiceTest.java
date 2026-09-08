@@ -10,6 +10,7 @@ import com.azt.streaming.acquisition.domain.TorrentDownloader;
 import com.azt.streaming.ingestion.domain.StreamJob;
 import com.azt.streaming.ingestion.domain.StreamJobNotFoundException;
 import com.azt.streaming.ingestion.domain.StreamJobStatus;
+import com.azt.streaming.ingestion.infrastructure.InMemoryStreamJobRepository;
 import com.azt.streaming.shared.storage.MediaStorage;
 import com.azt.streaming.transcoding.domain.MediaTranscoder;
 import com.azt.streaming.transcoding.domain.TranscodingException;
