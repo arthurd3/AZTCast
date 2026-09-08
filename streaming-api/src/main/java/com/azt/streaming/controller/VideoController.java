@@ -1,7 +1,7 @@
-package com.azt.streamingdata.controller;
+package com.azt.streaming.controller;
 
-import com.azt.streamingdata.controller.request.MagnetUrl;
-import com.azt.streamingdata.service.MagnetStreamingOrchestrator;
+import com.azt.streaming.controller.request.MagnetUrl;
+import com.azt.streaming.service.MagnetStreamingOrchestrator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;

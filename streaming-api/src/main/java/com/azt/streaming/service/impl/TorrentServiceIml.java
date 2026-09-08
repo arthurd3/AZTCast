@@ -1,4 +1,4 @@
-package com.azt.streamingdata.service.impl;
+package com.azt.streaming.service.impl;
 
 import bt.Bt;
 import bt.data.Storage;
@@ -8,7 +8,7 @@ import bt.dht.DHTModule;
 import bt.runtime.BtClient;
 import bt.runtime.Config;
 import bt.torrent.selector.SequentialSelector;
-import com.azt.streamingdata.service.ITorrentService;
+import com.azt.streaming.service.ITorrentService;
 import com.google.inject.Module;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;

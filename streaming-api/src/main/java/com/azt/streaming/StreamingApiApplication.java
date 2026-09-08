@@ -1,4 +1,4 @@
-package com.azt.streamingdata;
+package com.azt.streaming;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -6,10 +6,10 @@ import org.springframework.scheduling.annotation.EnableAsync;
 
 @SpringBootApplication
 @EnableAsync
-public class StreamingDataApplication {
+public class StreamingApiApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(StreamingDataApplication.class, args);
+        SpringApplication.run(StreamingApiApplication.class, args);
     }
 
 }

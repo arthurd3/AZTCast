@@ -1,4 +1,4 @@
-package com.azt.streamingdata.config;
+package com.azt.streaming.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

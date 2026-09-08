@@ -1,10 +1,10 @@
-package com.azt.streamingdata;
+package com.azt.streaming;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
-class StreamingDataApplicationTests {
+class StreamingApiApplicationTests {
 
     @Test
     void contextLoads() {

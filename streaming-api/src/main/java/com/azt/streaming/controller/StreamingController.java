@@ -1,4 +1,4 @@
-package com.azt.streamingdata.controller;
+package com.azt.streaming.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;

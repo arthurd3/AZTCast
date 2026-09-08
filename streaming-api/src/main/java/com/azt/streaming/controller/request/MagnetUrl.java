@@ -1,4 +1,4 @@
-package com.azt.streamingdata.controller.request;
+package com.azt.streaming.controller.request;
 
 import jakarta.validation.constraints.NotBlank;
 

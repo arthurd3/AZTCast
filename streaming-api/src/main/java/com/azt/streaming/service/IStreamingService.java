@@ -1,4 +1,4 @@
-package com.azt.streamingdata.service;
+package com.azt.streaming.service;
 
 import org.springframework.core.io.Resource;
 import org.springframework.web.multipart.MultipartFile;

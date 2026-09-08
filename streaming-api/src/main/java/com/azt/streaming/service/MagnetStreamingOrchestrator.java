@@ -1,6 +1,6 @@
-package com.azt.streamingdata.service;
+package com.azt.streaming.service;
 
-import com.azt.streamingdata.controller.request.MagnetUrl;
+import com.azt.streaming.controller.request.MagnetUrl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;

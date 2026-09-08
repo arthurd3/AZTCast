@@ -1,6 +1,6 @@
-package com.azt.streamingdata.service.impl;
+package com.azt.streaming.service.impl;
 
-import com.azt.streamingdata.service.IStreamingService;
+import com.azt.streaming.service.IStreamingService;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;

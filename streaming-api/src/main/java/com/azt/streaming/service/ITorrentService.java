@@ -1,4 +1,4 @@
-package com.azt.streamingdata.service;
+package com.azt.streaming.service;
 
 import java.io.IOException;
 import java.nio.file.Path;
