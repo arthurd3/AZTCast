@@ -28,6 +28,9 @@ aztcast:
       # volume and one `du` target cover both.
       downloads-dir: ./var/downloads
       hls-dir: ./var/hls
+      # Matches redis.job-ttl. Media outliving its job leaves directories nothing
+      # can name; a job outliving its media reports READY for a video that is gone.
+      retention: 7d
 
     ffmpeg:
       binary: ffmpeg

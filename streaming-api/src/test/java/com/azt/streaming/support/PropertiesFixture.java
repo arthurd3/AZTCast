@@ -84,7 +84,7 @@ public final class PropertiesFixture {
 
         public StreamingProperties build() {
             return new StreamingProperties(
-                    new StreamingProperties.Storage(downloadsDir, hlsDir),
+                    new StreamingProperties.Storage(downloadsDir, hlsDir, Duration.ofDays(7)),
                     new StreamingProperties.Ffmpeg(
                             binary, "/bin/true", "libx264", Duration.ofSeconds(30), segmentDuration, renditions),
                     new StreamingProperties.Torrent(

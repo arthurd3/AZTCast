@@ -17,14 +17,23 @@ application state.
 
 ## Reclaiming disk
 
+Media older than `aztcast.streaming.storage.retention` (default 7d) is deleted
+automatically — a directory is aged by its **newest** file, not its own mtime, so
+an encode running longer than the window cannot have its own output removed
+underneath it. The reaper runs hourly.
+
+Retention and `aztcast.streaming.redis.job-ttl` are two halves of one number.
+Media outliving its job leaves directories nothing can name; a job outliving its
+media reports READY for a video that is gone. **Change them together.**
+
+To reclaim space now, delete a video's directories by hand:
+
 ```bash
-du -sh streaming-api/var/*
-rm -rf streaming-api/var/downloads/<videoId>     # keep the HLS output
-rm -rf streaming-api/var/hls/<videoId>           # remove a video entirely
-docker volume rm aztcast_media                   # containers, everything
+docker compose -f deploy/docker-compose.yml exec streaming-api \
+  rm -rf /var/lib/aztcast/hls/<videoId> /var/lib/aztcast/downloads/<videoId>
 ```
 
-Nothing prunes automatically. A long-running instance will fill its disk.
+Both trees are regenerable caches: deleting them costs a re-ingestion, not data.
 
 ## Redis
 

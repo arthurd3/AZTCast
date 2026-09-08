@@ -4,6 +4,7 @@ import java.util.concurrent.Executor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 /**
@@ -24,6 +25,9 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
  */
 @Configuration
 @EnableAsync
+// Scheduling runs on Boot's own single-thread scheduler, NOT the transcoding pool below.
+// Sharing them would let a reaper run block an encode, or an encode starve the reaper.
+@EnableScheduling
 public class AsyncConfiguration {
 
     /** Bean name that {@code @Async} call sites must qualify against. */

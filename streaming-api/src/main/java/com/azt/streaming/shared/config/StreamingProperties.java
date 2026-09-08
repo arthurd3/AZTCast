@@ -35,8 +35,12 @@ public record StreamingProperties(
      * Where media lives on disk. The two directories used to sit under unrelated top-level paths
      * ({@code ./download-torrents/} and {@code ./downloads/hls}); they are siblings now so a single
      * ignore rule, a single Docker volume and a single {@code du} target cover both.
+     *
+     * <p>{@code retention} is how long media survives after its last modification. It should match
+     * {@code redis.job-ttl}: a job that outlives its media reports READY for a video that is gone,
+     * and media that outlives its job is a directory nothing refers to any more.
      */
-    public record Storage(@NotNull Path downloadsDir, @NotNull Path hlsDir) {}
+    public record Storage(@NotNull Path downloadsDir, @NotNull Path hlsDir, @NotNull Duration retention) {}
 
     /**
      * The external ffmpeg process and the HLS ladder it produces.
