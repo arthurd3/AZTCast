@@ -33,6 +33,19 @@ public record StreamJob(
         return new StreamJob(videoId, StreamJobStatus.FAILED, magnetUrl, reason, createdAt, now);
     }
 
+    /**
+     * Whether this job claims work is still happening.
+     *
+     * <p>Named {@code inFlight()} rather than {@code isInFlight()} deliberately. Jackson picks up
+     * {@code isX()} methods on a record as extra properties, so the getter-shaped name serialised an
+     * {@code "inFlight"} field into Redis that deserialisation then rejected as unknown. Every other
+     * derived accessor here ({@code streamUrl()}) already avoids the getter prefix; this one now
+     * matches, and the record's components stay the whole wire format.
+     */
+    public boolean inFlight() {
+        return status == StreamJobStatus.DOWNLOADING || status == StreamJobStatus.TRANSCODING;
+    }
+
     /** Path to the master playlist, or null while it does not exist yet. */
     public String streamUrl() {
         return status == StreamJobStatus.READY ? "/api/v1/stream/" + videoId + "/master.m3u8" : null;

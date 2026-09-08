@@ -3,6 +3,7 @@ package com.azt.streaming.shared.error;
 import com.azt.streaming.acquisition.domain.TorrentDownloadException;
 import com.azt.streaming.ingestion.domain.StreamJobNotFoundException;
 import com.azt.streaming.playback.domain.AssetNotFoundException;
+import com.azt.streaming.shared.ratelimit.RateLimitExceededException;
 import com.azt.streaming.transcoding.domain.TranscodingException;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
@@ -51,6 +52,24 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(StreamJobNotFoundException.class)
     public ProblemDetail handleJobNotFound(StreamJobNotFoundException e) {
         return problem(HttpStatus.NOT_FOUND, ProblemTypes.JOB_NOT_FOUND, "Job not found", e.getMessage());
+    }
+
+    /**
+     * A specific handler is required, not optional: without it the catch-all {@code Exception}
+     * handler below would turn every throttled request into a logged 500.
+     */
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ProblemDetail> handleRateLimitExceeded(RateLimitExceededException e) {
+        log.warn("Rate limited: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, Long.toString(Math.max(1, e.retryAfter().toSeconds())))
+                .cacheControl(CacheControl.noStore())
+                .body(problem(
+                        HttpStatus.TOO_MANY_REQUESTS,
+                        ProblemTypes.RATE_LIMITED,
+                        "Too many requests",
+                        "Ingestion is rate limited. Retry in %d seconds."
+                                .formatted(Math.max(1, e.retryAfter().toSeconds()))));
     }
 
     @ExceptionHandler(TorrentDownloadException.class)

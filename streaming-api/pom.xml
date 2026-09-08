@@ -43,6 +43,15 @@
             <version>${springdoc.version}</version>
         </dependency>
 
+        <!-- Job state, ingestion idempotency and rate limiting.
+             Deliberately NOT segment bytes: a value over ~1 MB in Redis displaces
+             thousands of useful keys, blocks the single-threaded event loop for every
+             other client, and slows replication. Segments stay on disk, served by nginx. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
         <!-- BitTorrent acquisition -->
         <dependency>
             <groupId>com.github.atomashpolskiy</groupId>
@@ -87,6 +96,16 @@
         <dependency>
             <groupId>org.awaitility</groupId>
             <artifactId>awaitility</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

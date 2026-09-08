@@ -26,5 +26,13 @@ aztcast:
         max-size: 1
         queue-capacity: 10
         thread-name-prefix: "test-transcode-"
+    redis:
+      # Tests use the in-memory path unless they explicitly opt in; the Redis ones override
+      # this and bring their own container.
+      enabled: false
+      job-ttl: 7d
+      rate-limit:
+        capacity: 5
+        refill-per-hour: 20
     web:
       allowed-origins: []

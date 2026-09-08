@@ -17,6 +17,7 @@ public final class ProblemTypes {
     public static final URI JOB_NOT_FOUND = URI.create(BASE + "job-not-found");
     public static final URI ACQUISITION_FAILED = URI.create(BASE + "acquisition-failed");
     public static final URI TRANSCODING_FAILED = URI.create(BASE + "transcoding-failed");
+    public static final URI RATE_LIMITED = URI.create(BASE + "rate-limited");
     public static final URI INTERNAL_ERROR = URI.create(BASE + "internal-error");
 
     private ProblemTypes() {}

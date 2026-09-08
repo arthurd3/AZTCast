@@ -209,6 +209,7 @@ class RealFfmpegLadderTest {
                 base.torrent(),
                 base.transcoding(),
                 base.playback(),
+                base.redis(),
                 base.web());
     }
 }

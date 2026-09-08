@@ -28,6 +28,7 @@ public record StreamingProperties(
         @NestedConfigurationProperty @Valid @NotNull Torrent torrent,
         @NestedConfigurationProperty @Valid @NotNull Transcoding transcoding,
         @NestedConfigurationProperty @Valid @NotNull Playback playback,
+        @NestedConfigurationProperty @Valid @NotNull Redis redis,
         @NestedConfigurationProperty @Valid @NotNull Web web) {
 
     /**
@@ -92,6 +93,42 @@ public record StreamingProperties(
      * they are two halves of one contract and there is no way for either side to check the other.
      */
     public record Playback(boolean offloadEnabled, @NotBlank String internalPrefix) {}
+
+    /**
+     * What Redis is used for, and what happens without it.
+     *
+     * <p>Scope is narrow on purpose. Redis holds <em>state and coordination</em> — job progress,
+     * which magnets are already being ingested, and rate-limit counters. It holds no media: a value
+     * over about a megabyte displaces thousands of useful keys, stalls the single-threaded event
+     * loop for every other client, and slows replication, and a segment is far larger than that.
+     * Segments live on disk and leave via nginx.
+     *
+     * <p>{@code enabled} defaults to false so the service still starts and works with no Redis
+     * anywhere. Note what that costs and what it does not: without Redis, job state is per-instance
+     * and lost on restart (as it always was), and duplicate ingestions are not detected. Playback is
+     * completely unaffected either way — serving a segment never touches Redis.
+     *
+     * @param jobTtl how long a finished job stays queryable. Should not outlive the media itself,
+     *     or a job reports READY for a video the reaper has already deleted.
+     */
+    public record Redis(
+            boolean enabled,
+            @NotNull Duration jobTtl,
+            @NestedConfigurationProperty @Valid @NotNull RateLimit rateLimit) {
+
+        /**
+         * Token bucket for the ingestion endpoint.
+         *
+         * <p>This endpoint is unauthenticated and makes the server download arbitrary torrents, so
+         * it is the one place where an absent limit is a real liability rather than a nicety.
+         * Playback is deliberately not limited — a player pulls dozens of segments a minute, and
+         * throttling that is throttling legitimate viewing.
+         *
+         * @param capacity burst size: how many ingestions one client may start back to back
+         * @param refillPerHour sustained rate, spread smoothly rather than reset on the hour
+         */
+        public record RateLimit(@Positive int capacity, @Positive int refillPerHour) {}
+    }
 
     /**
      * CORS origins. Empty is the correct production value: nginx reverse-proxies {@code /api} onto

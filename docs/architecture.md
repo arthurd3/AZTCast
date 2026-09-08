@@ -99,6 +99,19 @@ nginx serves the player and reverse-proxies `/api` onto the same origin, so the
 browser never makes a cross-origin request. That topology — not the CORS
 configuration — is what allows the API to ship with an empty origin allowlist.
 
+### What Redis holds, and what it does not
+
+State and coordination: job records, the magnet→videoId claim that makes
+ingestion idempotent, and rate-limit buckets. **No media.** A value over roughly
+a megabyte displaces thousands of useful keys and stalls Redis's single event
+loop for every other client, and a segment is far larger than that.
+
+The property that makes this safe to operate: **playback never touches Redis.**
+Serving a segment is a path resolution and a `stat`. So a Redis outage means
+"job status is unavailable", not "nobody can watch anything" — which is why the
+fallbacks are simple rather than elaborate. Enabled only in the `docker` profile;
+off by default.
+
 ### Who writes the segment bytes
 
 nginx does, in the container topology. The API resolves the asset, checks
@@ -130,7 +143,11 @@ A mismatch in any of them is a silent 404 on every segment.
 
 - **No authentication.** Anyone who can reach the API can make the server
   download arbitrary torrents.
-- **Job state is in memory** and lost on restart.
+- **Job state is in memory** when `aztcast.streaming.redis.enabled` is false
+  (the default), and lost on restart. With Redis it survives — see
+  [ADR-0009](decisions/0009-redis-for-state-not-for-media.md).
+- Nothing resumes work across a restart. Interrupted jobs are failed at startup
+  rather than left claiming progress, but the download does start over.
 
 ### Corrected: HTTP Range support
 

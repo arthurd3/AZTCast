@@ -26,6 +26,43 @@ docker volume rm aztcast_media                   # containers, everything
 
 Nothing prunes automatically. A long-running instance will fill its disk.
 
+## Redis
+
+Optional, and off unless `aztcast.streaming.redis.enabled` is true (the `docker`
+profile turns it on). It holds job state, the magnet→videoId claims that make
+ingestion idempotent, and rate-limit buckets. **It holds no media.**
+
+**A Redis outage does not stop playback.** Serving a segment never touches it.
+What breaks is job status and deduplication. Expect:
+
+- `/actuator/health` → `DOWN`, `/actuator/health/readiness` → `UP`. That is
+  deliberate: the container must not be restarted mid-transcode because a cache
+  is unavailable.
+- Ingestion keeps working. The rate limiter fails **open** — a protective device
+  must not become the outage.
+- Recovery is automatic once Redis returns; Lettuce reconnects with a backoff of
+  a few seconds.
+
+Useful commands:
+
+```bash
+# Every key should have a TTL. Any that does not is a bug.
+docker compose -f deploy/docker-compose.yml exec redis sh -c \
+  'for k in $(redis-cli --scan); do [ "$(redis-cli TTL "$k")" = "-1" ] && echo "NO TTL: $k"; done'
+
+# A magnet that refuses to re-ingest: its claim outlived its job. Drop the claim.
+docker compose -f deploy/docker-compose.yml exec redis \
+  redis-cli --scan --pattern 'aztcast:v1:magnet:*'
+docker compose -f deploy/docker-compose.yml exec redis redis-cli DEL 'aztcast:v1:magnet:<infohash>'
+
+# A client stuck behind the rate limit.
+docker compose -f deploy/docker-compose.yml exec redis redis-cli DEL 'aztcast:v1:rl:<ip>'
+```
+
+Jobs interrupted by a restart are failed automatically at startup, with reason
+"Interrupted by a service restart" — work does not resume, so the alternative
+would be a job reporting DOWNLOADING for the seven days its key lives.
+
 ## Exit code 137
 
 SIGKILL — the OOM killer. This has happened in this project before.

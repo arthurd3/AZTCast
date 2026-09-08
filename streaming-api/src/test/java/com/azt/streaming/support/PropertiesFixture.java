@@ -29,6 +29,8 @@ public final class PropertiesFixture {
         private List<String> videoExtensions = List.of("mp4", "mkv");
         private boolean offloadEnabled = false;
         private String internalPrefix = "/_media";
+        private boolean redisEnabled = false;
+        private int rateLimitCapacity = 5;
 
         public Builder hlsDir(Path value) {
             this.hlsDir = value;
@@ -70,6 +72,16 @@ public final class PropertiesFixture {
             return this;
         }
 
+        public Builder redisEnabled(boolean value) {
+            this.redisEnabled = value;
+            return this;
+        }
+
+        public Builder rateLimitCapacity(int value) {
+            this.rateLimitCapacity = value;
+            return this;
+        }
+
         public StreamingProperties build() {
             return new StreamingProperties(
                     new StreamingProperties.Storage(downloadsDir, hlsDir),
@@ -80,6 +92,10 @@ public final class PropertiesFixture {
                     new StreamingProperties.Transcoding(
                             new StreamingProperties.Transcoding.Pool(1, 1, 10, "test-")),
                     new StreamingProperties.Playback(offloadEnabled, internalPrefix),
+                    new StreamingProperties.Redis(
+                            redisEnabled,
+                            Duration.ofDays(7),
+                            new StreamingProperties.Redis.RateLimit(rateLimitCapacity, 20)),
                     new StreamingProperties.Web(List.of()));
         }
     }

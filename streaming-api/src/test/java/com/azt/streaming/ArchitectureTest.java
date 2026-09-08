@@ -158,6 +158,22 @@ class ArchitectureTest {
     }
 
     @Test
+    @DisplayName("the Redis driver stays behind its adapters")
+    void redisIsConfinedToItsAdapters() {
+        // Redis is an implementation detail of storing job state and counting requests, not a thing
+        // the pipeline knows about. Confining the driver is what keeps "run without Redis" a real
+        // configuration rather than an aspiration — a stray import in playback or transcoding would
+        // make a cache outage into a playback outage.
+        noClasses()
+                .that()
+                .resideOutsideOfPackages(ROOT + ".shared..", ROOT + ".ingestion.infrastructure..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("org.springframework.data.redis..", "io.lettuce..")
+                .check(classes);
+    }
+
+    @Test
     @DisplayName("shared knows nothing about the slices that use it")
     void sharedConfigStaysAtTheBottom() {
         noClasses()

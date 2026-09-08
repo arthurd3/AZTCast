@@ -31,7 +31,24 @@ Location: /api/v1/videos/5f47b10e-d445-45df-bf17-9e0310c2012b
 
 `400` with a per-field `errors` array if `magnetUrl` is missing or blank.
 
-### `GET /api/v1/videos/{videoId}`
+#### Idempotency
+
+`POST` is idempotent per torrent. Posting a magnet whose ingestion already
+exists returns that job — same `videoId`, no second download — rather than
+starting a duplicate. Matching is by **infohash**, so the same torrent from two
+sources with different tracker lists is recognised as one.
+
+Requires `aztcast.streaming.redis.enabled`. Without it every POST starts a new
+ingestion, as before.
+
+### `429 Too Many Requests`
+
+Ingestion is rate limited per client (default: burst of 5, 20/hour sustained).
+The response is `application/problem+json` with type
+`https://aztcast.dev/problems/rate-limited` and a `Retry-After` header in
+seconds. Playback is **not** rate limited.
+
+## `GET /api/v1/videos/{videoId}`
 
 Progress of an ingestion.
 

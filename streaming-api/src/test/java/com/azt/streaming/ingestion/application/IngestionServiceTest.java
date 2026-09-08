@@ -7,10 +7,11 @@ import static org.mockito.BDDMockito.given;
 
 import com.azt.streaming.acquisition.domain.TorrentDownloadException;
 import com.azt.streaming.acquisition.domain.TorrentDownloader;
+import com.azt.streaming.ingestion.domain.MagnetRegistry;
+import com.azt.streaming.ingestion.infrastructure.InMemoryStreamJobRepository;
 import com.azt.streaming.ingestion.domain.StreamJob;
 import com.azt.streaming.ingestion.domain.StreamJobNotFoundException;
 import com.azt.streaming.ingestion.domain.StreamJobStatus;
-import com.azt.streaming.ingestion.infrastructure.InMemoryStreamJobRepository;
 import com.azt.streaming.shared.storage.MediaStorage;
 import com.azt.streaming.transcoding.domain.MediaTranscoder;
 import com.azt.streaming.transcoding.domain.TranscodingException;
@@ -18,6 +19,7 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,6 +41,22 @@ class IngestionServiceTest {
     private InMemoryStreamJobRepository jobRepository;
     private IngestionService service;
 
+    /**
+     * Always wins the claim, i.e. the no-Redis behaviour. Deduplication has its own test; every
+     * other case here is about the pipeline, and a stubbed registry would only add noise.
+     */
+    private static final MagnetRegistry ALWAYS_CLAIMS = new MagnetRegistry() {
+        @Override
+        public Optional<String> claim(String magnetUrl, String videoId) {
+            return Optional.empty();
+        }
+
+        @Override
+        public void release(String magnetUrl) {
+            // nothing to release
+        }
+    };
+
     @BeforeEach
     void setUp() {
         jobRepository = new InMemoryStreamJobRepository();
@@ -48,6 +66,7 @@ class IngestionServiceTest {
                         torrentDownloader,
                         mediaTranscoder,
                         jobRepository,
+                        ALWAYS_CLAIMS,
                         Clock.fixed(Instant.parse("2026-09-08T12:00:00Z"), ZoneOffset.UTC));
         // lenient: the lookup-only test never starts an ingestion, so it never uses this.
         Mockito.lenient()

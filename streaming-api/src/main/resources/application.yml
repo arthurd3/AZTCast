@@ -92,6 +92,21 @@ aztcast:
       # Must match the `internal` location in deploy/nginx/default.conf.
       internal-prefix: /_media
 
+    redis:
+      # Off by default: the service starts and works with no Redis anywhere. Without it,
+      # job state is per-instance and lost on restart (as it always was), duplicate
+      # ingestions are not detected, and ingestion is not rate limited.
+      # Playback is unaffected either way — serving a segment never touches Redis.
+      enabled: false
+      # Should not outlive the media itself, or a job reports READY for a video that has
+      # already been deleted.
+      job-ttl: 7d
+      rate-limit:
+        # Small burst, modest sustained rate: one ingestion is hours of CPU and gigabytes
+        # of disk, so the useful limit is far lower than for an ordinary write endpoint.
+        capacity: 5
+        refill-per-hour: 20
+
     web:
       # Empty in production: nginx makes the player and the API same-origin.
       allowed-origins: []
