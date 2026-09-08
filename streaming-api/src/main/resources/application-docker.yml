@@ -5,5 +5,11 @@ aztcast:
     storage:
       downloads-dir: /var/lib/aztcast/downloads
       hls-dir: /var/lib/aztcast/hls
+    playback:
+      # nginx is in front, the media volume is mounted read-only into it, and
+      # /_media is declared internal there. Segment bytes leave via sendfile and
+      # never touch a Tomcat thread.
+      offload-enabled: true
+      internal-prefix: /_media
     web:
       allowed-origins: []

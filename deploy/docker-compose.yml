@@ -38,6 +38,14 @@ services:
       context: ..
       dockerfile: web-player/Dockerfile
     image: aztcast/web-player:dev
+    volumes:
+      # Read-only, and mounted for one reason: the API answers a segment request with
+      # an X-Accel-Redirect into /_media, and nginx can only honour that if it can see
+      # the file. Without this mount every segment 404s inside nginx.
+      #
+      # Read-only matters — nginx has no business writing here, and the transcoder is
+      # the only writer.
+      - media:/var/lib/aztcast:ro
     ports:
       # Override with WEB_PORT if 8000 is taken:  WEB_PORT=8100 docker compose ... up
       - "${WEB_PORT:-8000}:80"

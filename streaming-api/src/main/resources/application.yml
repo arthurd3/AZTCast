@@ -61,6 +61,14 @@ aztcast:
         queue-capacity: 500
         thread-name-prefix: "transcode-"
 
+    playback:
+      # Off by default so `mvn spring-boot:run` serves bytes itself with no nginx
+      # in front. The docker profile turns it on, because that is the only
+      # topology where the internal location and the media volume both exist.
+      offload-enabled: false
+      # Must match the `internal` location in deploy/nginx/default.conf.
+      internal-prefix: /_media
+
     web:
       # Empty in production: nginx makes the player and the API same-origin.
       allowed-origins: []

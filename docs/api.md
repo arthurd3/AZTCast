@@ -65,8 +65,27 @@ Variant playlists and segments.
 
 > **This path shape is frozen.** hls.js resolves variant playlists and segments
 > relative to the master URL, so changing either mapping breaks every player.
+> Note `{file}` is a *single* path segment: an encoder writing
+> `stream_0/playlist.m3u8` would be unreachable through this mapping.
 
 Anything resolving outside the media root is refused and reported as `404`.
+
+### Caching and range
+
+| Response | `Cache-Control` |
+| --- | --- |
+| Segments and init segments (`.m4s`, `.ts`, `.mp4`) | `public, max-age=31536000, immutable` |
+| Playlists (`.m3u8`) | `public, max-age=60, stale-while-revalidate=300, stale-if-error=86400` |
+| `404` — still transcoding | `no-store` |
+
+Segments carry an `ETag`, so revalidation is a `304`. `immutable` is literally
+true here: a `videoId` is a fresh UUID per ingestion and nothing under it is
+rewritten in place. The `404` is explicitly non-cacheable because its absence is
+the readiness signal — a cached one would tell a client "not ready" long after
+it was.
+
+`Range` is supported on every playback response (`Accept-Ranges: bytes`, `206`,
+`416`), whether the bytes come from the API or from nginx.
 
 ## Deprecated
 

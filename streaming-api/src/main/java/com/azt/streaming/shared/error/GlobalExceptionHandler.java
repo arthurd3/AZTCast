@@ -8,6 +8,7 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import java.net.URI;
 import java.util.Map;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -33,11 +34,18 @@ import lombok.extern.slf4j.Slf4j;
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(AssetNotFoundException.class)
-    public ProblemDetail handleAssetNotFound(AssetNotFoundException e) {
+    public ResponseEntity<ProblemDetail> handleAssetNotFound(AssetNotFoundException e) {
         // Debug, not warn: a player polling for a video that is still transcoding hits this on
         // every attempt, and it is not an error condition.
         log.debug("Asset not found: {}", e.getMessage());
-        return problem(HttpStatus.NOT_FOUND, ProblemTypes.ASSET_NOT_FOUND, "Asset not found", e.getMessage());
+
+        // no-store is load-bearing, not hygiene. A 404 is heuristically cacheable under RFC 9111,
+        // and the absence of master.m3u8 is precisely this service's "not ready yet" signal. Let a
+        // browser or proxy cache that 404 and the video stays unplayable to that client long after
+        // transcoding finished — the one failure the polling protocol cannot recover from.
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .cacheControl(CacheControl.noStore())
+                .body(problem(HttpStatus.NOT_FOUND, ProblemTypes.ASSET_NOT_FOUND, "Asset not found", e.getMessage()));
     }
 
     @ExceptionHandler(StreamJobNotFoundException.class)

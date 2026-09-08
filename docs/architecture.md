@@ -99,11 +99,55 @@ nginx serves the player and reverse-proxies `/api` onto the same origin, so the
 browser never makes a cross-origin request. That topology — not the CORS
 configuration — is what allows the API to ship with an empty origin allowlist.
 
+### Who writes the segment bytes
+
+nginx does, in the container topology. The API resolves the asset, checks
+containment, sets `Content-Type` and `Cache-Control`, and returns **headers
+only** with an `X-Accel-Redirect` into an `internal` location; nginx writes the
+file with `sendfile`. A Tomcat thread is held for a path resolution and a
+`stat`, not for the length of a transfer. See
+[ADR-0007](decisions/0007-nginx-serves-the-bytes.md).
+
+This is behind `aztcast.streaming.playback.offload-enabled`, **off by default**
+and on in the `docker` profile, so a bare `mvn spring-boot:run` still serves
+bytes itself. Both modes are covered by tests (`PlaybackControllerTest`,
+`PlaybackOffloadTest`), because the risk here is a mode that only works in one
+deployment.
+
+Three couplings this introduces, none of them checkable at startup:
+
+| API | nginx / compose |
+| --- | --- |
+| `playback.internal-prefix` | the `internal` `location` name |
+| `storage.hls-dir` | that location's `alias` |
+| — | the `media` volume must be mounted into the player container |
+
+A mismatch in any of them is a silent 404 on every segment.
+`scripts/smoke-test.sh` asserts all three against a running stack; run it with
+`VIDEO_ID=<uuid>` to include the delivery checks.
+
 ## Known gaps
 
 - **No authentication.** Anyone who can reach the API can make the server
   download arbitrary torrents.
 - **Job state is in memory** and lost on restart.
-- **No HTTP Range support** on segment responses.
 - Transcoding is sequential per video: each rung of the ladder runs after the
   previous one, on a single pool thread.
+
+### Corrected: HTTP Range support
+
+This list used to claim there was none. That was wrong, and it is worth saying
+why rather than quietly deleting the line.
+
+Both playback mappings return `ResponseEntity<Resource>`. Spring's
+`AbstractMessageConverterMethodProcessor` inspects the *runtime* body type, and
+for a `Resource` it emits `Accept-Ranges: bytes`, converts a `Range` header into
+a `206` via `HttpRange.toResourceRegions`, and answers `416` on an unsatisfiable
+range — without any code here asking for it. `PlaybackControllerTest` now pins
+this behaviour so it cannot be lost by accident.
+
+The trap the old note would have led someone into: "properly streaming" a
+segment with `StreamingResponseBody` or `InputStreamResource` **removes** range
+support, because neither is a `Resource` body that the converter path
+recognises. The gap was never missing functionality, only missing knowledge of
+it.

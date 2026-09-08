@@ -27,6 +27,7 @@ public record StreamingProperties(
         @NestedConfigurationProperty @Valid @NotNull Ffmpeg ffmpeg,
         @NestedConfigurationProperty @Valid @NotNull Torrent torrent,
         @NestedConfigurationProperty @Valid @NotNull Transcoding transcoding,
+        @NestedConfigurationProperty @Valid @NotNull Playback playback,
         @NestedConfigurationProperty @Valid @NotNull Web web) {
 
     /**
@@ -76,6 +77,21 @@ public record StreamingProperties(
                 @Positive int queueCapacity,
                 @NotBlank String threadNamePrefix) {}
     }
+
+    /**
+     * How playback answers a request for bytes.
+     *
+     * <p>{@code offloadEnabled} swaps the whole delivery path. Off, this process writes segment
+     * bytes itself. On, it returns headers only and nginx writes them with {@code sendfile} — which
+     * requires an nginx in front, with the media volume mounted and a matching {@code internal}
+     * location. The default is off because that is the configuration a bare
+     * {@code mvn spring-boot:run} has, and a default that only works inside Docker is a default that
+     * breaks development.
+     *
+     * <p>{@code internalPrefix} must match the {@code location} block nginx marks {@code internal};
+     * they are two halves of one contract and there is no way for either side to check the other.
+     */
+    public record Playback(boolean offloadEnabled, @NotBlank String internalPrefix) {}
 
     /**
      * CORS origins. Empty is the correct production value: nginx reverse-proxies {@code /api} onto

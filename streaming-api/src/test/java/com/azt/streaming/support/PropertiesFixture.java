@@ -27,6 +27,8 @@ public final class PropertiesFixture {
         private Duration segmentDuration = Duration.ofSeconds(4);
         private List<StreamingProperties.Rendition> renditions = List.of(RENDITION_720P, RENDITION_240P);
         private List<String> videoExtensions = List.of("mp4", "mkv");
+        private boolean offloadEnabled = false;
+        private String internalPrefix = "/_media";
 
         public Builder hlsDir(Path value) {
             this.hlsDir = value;
@@ -58,6 +60,16 @@ public final class PropertiesFixture {
             return this;
         }
 
+        public Builder offloadEnabled(boolean value) {
+            this.offloadEnabled = value;
+            return this;
+        }
+
+        public Builder internalPrefix(String value) {
+            this.internalPrefix = value;
+            return this;
+        }
+
         public StreamingProperties build() {
             return new StreamingProperties(
                     new StreamingProperties.Storage(downloadsDir, hlsDir),
@@ -67,6 +79,7 @@ public final class PropertiesFixture {
                             videoExtensions, Duration.ofSeconds(30), Duration.ofSeconds(1)),
                     new StreamingProperties.Transcoding(
                             new StreamingProperties.Transcoding.Pool(1, 1, 10, "test-")),
+                    new StreamingProperties.Playback(offloadEnabled, internalPrefix),
                     new StreamingProperties.Web(List.of()));
         }
     }
