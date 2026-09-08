@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>AZTCast — Diagnóstico HLS</title>
+  </head>
+  <body>
+    <div class="container diagnostics">
+      <h1>🔧 Diagnóstico HLS</h1>
+      <p class="video-info">
+        Inspeciona um master playlist antes de tocá-lo: codecs anunciados, suporte do navegador e
+        MIME type do primeiro segmento.
+        <a href="/index.html">Voltar ao player</a>
+      </p>
+
+      <div class="controls">
+        <input
+          type="text"
+          id="videoId"
+          placeholder="Video ID (UUID)"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button id="inspectBtn" type="button">Inspecionar</button>
+        <button id="playBtn" type="button">Reproduzir</button>
+        <button id="clearBtn" type="button">Limpar log</button>
+      </div>
+
+      <div id="status" class="status hidden"></div>
+
+      <video id="video" controls crossorigin="anonymous"></video>
+
+      <h2>Log</h2>
+      <pre id="log" class="log"></pre>
+    </div>
+
+    <script type="module" src="/src/diagnostics.js"></script>
+  </body>
+</html>

@@ -1,116 +1,40 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Adaptive Video Player</title>
-    <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            background: #111; 
-            color: #fff; 
-            text-align: center; 
-            padding: 20px;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        .controls {
-            margin: 20px 0;
-            padding: 20px;
-            background: #222;
-            border-radius: 10px;
-        }
-        input[type="text"] {
-            padding: 10px;
-            font-size: 16px;
-            border: 1px solid #555;
-            background: #333;
-            color: #fff;
-            border-radius: 5px;
-            margin-right: 10px;
-            width: 300px;
-        }
-        button {
-            padding: 10px 20px;
-            font-size: 16px;
-            background: #007bff;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-        button:hover {
-            background: #0056b3;
-        }
-        button:disabled {
-            background: #666;
-            cursor: not-allowed;
-        }
-        video { 
-            width: 90%; 
-            max-width: 800px;
-            margin-top: 20px; 
-            background: black; 
-            border-radius: 10px;
-        }
-        select { 
-            margin-top: 20px; 
-            padding: 8px;
-            font-size: 14px;
-            background: #333;
-            color: #fff;
-            border: 1px solid #555;
-            border-radius: 5px;
-        }
-        .status {
-            margin: 10px 0;
-            padding: 10px;
-            border-radius: 5px;
-            font-weight: bold;
-        }
-        .status.loading {
-            background: #ffc107;
-            color: #000;
-        }
-        .status.success {
-            background: #28a745;
-        }
-        .status.error {
-            background: #dc3545;
-        }
-        .hidden {
-            display: none;
-        }
-        .video-info {
-            margin-top: 10px;
-            font-size: 14px;
-            color: #ccc;
-        }
-    </style>
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-</head>
-<body>
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>AZTCast — Player</title>
+  </head>
+  <body>
     <div class="container">
-        <h1>🎬 Adaptive Streaming Video Player</h1>
+      <h1>🎬 AZTCast — Player Adaptativo</h1>
 
-        <div class="controls">
-            <label for="videoId">Video ID:</label><br><br>
-            <input type="text" id="videoId" placeholder="Digite o ID do vídeo (ex: 2724a02c-f275-49d2-8389-e76bfeacd4c6)">
-            <button onclick="loadVideo()" id="loadBtn">Carregar Vídeo</button>
-        </div>
+      <div class="controls">
+        <label for="videoId">Video ID:</label><br /><br />
+        <input
+          type="text"
+          id="videoId"
+          placeholder="Cole o ID do vídeo (UUID)"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button id="loadBtn" type="button">Carregar Vídeo</button>
+      </div>
 
-        <div id="status" class="status hidden"></div>
+      <div id="status" class="status hidden"></div>
 
-        <video id="video" controls class="hidden"></video>
-        
-        <div class="video-info">
-            <label for="qualitySelect">Qualidade:</label>
-            <select id="qualitySelect" class="hidden"></select>
-            <div id="videoInfo"></div>
-        </div>
+      <video id="video" controls crossorigin="anonymous" class="hidden"></video>
+
+      <div class="video-info">
+        <label for="qualitySelect">Qualidade:</label>
+        <select id="qualitySelect" class="hidden"></select>
+        <div id="videoInfo"></div>
+      </div>
+
+      <p class="video-info"><a href="/diagnostics.html">Diagnóstico HLS</a></p>
     </div>
 
-    <script src="player.js"></script>
-</body>
+    <script type="module" src="/src/main.js"></script>
+  </body>
 </html>
