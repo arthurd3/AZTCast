@@ -1,4 +1,4 @@
-package com.azt.streaming.controller;
+package com.azt.streaming.playback.web;
 
 import com.azt.streaming.shared.config.StreamingProperties;
 import lombok.RequiredArgsConstructor;
@@ -13,7 +13,7 @@ import java.nio.file.Path;
 @RestController
 @RequestMapping("/api/v1/stream")
 @RequiredArgsConstructor
-public class StreamingController {
+public class PlaybackController {
 
     private final StreamingProperties properties;
 

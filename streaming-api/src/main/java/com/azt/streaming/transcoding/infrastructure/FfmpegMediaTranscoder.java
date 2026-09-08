@@ -1,13 +1,11 @@
-package com.azt.streaming.service.impl;
+package com.azt.streaming.transcoding.infrastructure;
 
-import com.azt.streaming.service.IStreamingService;
+import com.azt.streaming.transcoding.domain.MediaTranscoder;
 import com.azt.streaming.shared.config.AsyncConfiguration;
 import com.azt.streaming.shared.config.StreamingProperties;
 import lombok.RequiredArgsConstructor;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.FileSystemResource;
-import org.springframework.core.io.Resource;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -19,13 +17,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 @Service
 @Slf4j
 @RequiredArgsConstructor
-public class StreamingServiceImpl implements IStreamingService {
+public class FfmpegMediaTranscoder implements MediaTranscoder {
 
     private final StreamingProperties properties;
 
@@ -40,14 +37,6 @@ public class StreamingServiceImpl implements IStreamingService {
         }
     }
 
-    @Override
-    public String startVideoProcessing(Path file, String id) {
-        String videoId = UUID.randomUUID().toString();
-        System.out.println("Before async call");
-        processVideoAsync(file, videoId);
-        System.out.println("After async call - Video ID: " + videoId);
-        return videoId;
-    }
 
     private String calculateMaxrate(String bitrate) {
         int br = Integer.parseInt(bitrate.replace("k", ""));
@@ -59,19 +48,11 @@ public class StreamingServiceImpl implements IStreamingService {
         return (int)(br * 1.5) + "k"; // buffer ~1.5x bitrate
     }
 
-    @Override
-    public Resource getVideoPlaylist() {
-        File masterPlaylistFile = properties.storage().hlsDir().resolve("master.m3u8").toFile();
-        if (!masterPlaylistFile.exists()) {
-            throw new RuntimeException("Master playlist not found");
-        }
-        return new FileSystemResource(masterPlaylistFile);
-    }
 
 
     @Override
     @Async(AsyncConfiguration.TRANSCODING_EXECUTOR)
-    public CompletableFuture<Void> processVideoAsync(Path inputFile, String videoId) {
+    public CompletableFuture<Void> transcodeToHls(Path inputFile, String videoId) {
         log.info("Starting HLS processing for videoId: {} from file: {}", videoId, inputFile);
 
         try {

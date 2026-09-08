@@ -1,4 +1,4 @@
-package com.azt.streaming.service.impl;
+package com.azt.streaming.acquisition.infrastructure;
 
 import bt.Bt;
 import bt.data.Storage;
@@ -8,21 +8,19 @@ import bt.dht.DHTModule;
 import bt.runtime.BtClient;
 import bt.runtime.Config;
 import bt.torrent.selector.SequentialSelector;
-import com.azt.streaming.service.ITorrentService;
+import com.azt.streaming.acquisition.domain.TorrentDownloader;
 import com.google.inject.Module;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 @Service
 @Slf4j
-public class TorrentServiceIml implements ITorrentService {
+public class BtTorrentDownloader implements TorrentDownloader {
 
 
     private Config config = new Config() {
@@ -40,18 +38,19 @@ public class TorrentServiceIml implements ITorrentService {
     });
 
     // get download directory
-    public CompletableFuture<Path> downloadTorrentLink(final String magnetLink , Path downloadDirectory) {
+    @Override
+    public CompletableFuture<Path> download(final String magnetUrl, final Path targetDirectory) {
 
         CompletableFuture<Path> downloadFuture = new CompletableFuture<>();
 
         // create file system based backend for torrent data
-        Storage storage = new FileSystemStorage(downloadDirectory);
+        Storage storage = new FileSystemStorage(targetDirectory);
 
         // create client with a private runtime
         BtClient client = Bt.client()
                 .config(config)
                 .storage(storage)
-                .magnet(magnetLink)
+                .magnet(magnetUrl)
                 .autoLoadModules()
                 .module(dhtModule)
                 .selector(SequentialSelector.sequential()) // <-- FORCE SEQUENTIAL DOWNLOAD
@@ -61,19 +60,19 @@ public class TorrentServiceIml implements ITorrentService {
         // launch
         client.startAsync(state -> {
             if (state.getPiecesRemaining() == 0) {
-                log.info("Download do magnet {} concluído!", magnetLink);
-                findVideoFile(downloadDirectory)
+                log.info("Download do magnet {} concluído!", magnetUrl);
+                findVideoFile(targetDirectory)
                 .ifPresentOrElse(
                         downloadFuture::complete,
                         () -> downloadFuture.completeExceptionally(new RuntimeException("No video file found in torrent"))
                 );
 
             } else {
-                log.info("Progresso: {}% para o magnet {}", calculateProgress(state), magnetLink);
+                log.info("Progresso: {}% para o magnet {}", calculateProgress(state), magnetUrl);
             }
         }, 1000);
 
-        log.info("Iniciando download em segundo plano para o magnet: {}", magnetLink);
+        log.info("Iniciando download em segundo plano para o magnet: {}", magnetUrl);
 
         return downloadFuture;
     }

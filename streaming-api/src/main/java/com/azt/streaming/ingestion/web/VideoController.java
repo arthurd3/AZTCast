@@ -1,7 +1,7 @@
-package com.azt.streaming.controller;
+package com.azt.streaming.ingestion.web;
 
-import com.azt.streaming.controller.request.MagnetUrl;
-import com.azt.streaming.service.MagnetStreamingOrchestrator;
+import com.azt.streaming.ingestion.application.IngestionService;
+import com.azt.streaming.ingestion.web.dto.CreateStreamJobRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -11,13 +11,13 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class VideoController {
 
-    private final MagnetStreamingOrchestrator magnetStreamingOrchestrator;
+    private final IngestionService ingestionService;
 
 
     @PostMapping("/download")
-    public ResponseEntity<String> downloadTorrentLink(@RequestBody final MagnetUrl torrentLink){
+    public ResponseEntity<String> downloadTorrentLink(@RequestBody final CreateStreamJobRequest request) {
 
-        String videoId = magnetStreamingOrchestrator.processMagnetLink(torrentLink);
+        String videoId = ingestionService.startIngestion(request.magnetUrl());
 
         String streamUrl = "/api/v1/stream/" + videoId + "/master.m3u8";
         String responseBody = "Download iniciado. O stream estará disponível em: " + streamUrl;
