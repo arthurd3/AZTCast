@@ -5,6 +5,21 @@ aztcast:
       allowed-origins:
         - http://localhost:5173
 
+    # On here, unlike the shipped default, because this is the profile of someone
+    # working on the feature. Paths are relative to streaming-api/, which is where
+    # `make api` runs from — same convention as storage.downloads-dir.
+    #
+    # The .mmdb files are gitignored (var/ is), so a fresh clone has neither and
+    # peers are simply recorded without a location until they are fetched:
+    #   mkdir -p var/geoip && cd var/geoip
+    #   curl -O https://download.db-ip.com/free/dbip-city-lite-YYYY-MM.mmdb.gz
+    #   curl -O https://download.db-ip.com/free/dbip-asn-lite-YYYY-MM.mmdb.gz
+    #   gunzip *.gz && rename the date suffix off, or point the paths below at them
+    providers:
+      enabled: true
+      geoip-city-database: ./var/geoip/dbip-city-lite.mmdb
+      geoip-asn-database: ./var/geoip/dbip-asn-lite.mmdb
+
     # Fedora and other patent-free ffmpeg builds ship libopenh264, not libx264.
     # Check yours with: ffmpeg -encoders | grep 264
     ffmpeg:

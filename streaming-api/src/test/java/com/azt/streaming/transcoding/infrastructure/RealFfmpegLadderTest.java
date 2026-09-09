@@ -216,6 +216,7 @@ class RealFfmpegLadderTest {
                 base.transcoding(),
                 base.playback(),
                 base.redis(),
+                base.providers(),
                 base.web());
     }
 }

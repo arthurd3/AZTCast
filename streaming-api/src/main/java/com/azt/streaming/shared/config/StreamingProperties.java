@@ -29,6 +29,7 @@ public record StreamingProperties(
         @NestedConfigurationProperty @Valid @NotNull Transcoding transcoding,
         @NestedConfigurationProperty @Valid @NotNull Playback playback,
         @NestedConfigurationProperty @Valid @NotNull Redis redis,
+        @NestedConfigurationProperty @Valid @NotNull Providers providers,
         @NestedConfigurationProperty @Valid @NotNull Web web) {
 
     /**
@@ -71,7 +72,96 @@ public record StreamingProperties(
     public record Torrent(
             @NotEmpty List<String> videoExtensions,
             @NotNull Duration downloadTimeout,
-            @NotNull Duration progressLogInterval) {}
+            @NotNull Duration progressLogInterval,
+            @NestedConfigurationProperty @Valid @NotNull Network network) {}
+
+    /**
+     * How the BitTorrent client presents itself on the network.
+     *
+     * <p>None of this makes the client anonymous, and it is worth being exact about why. BitTorrent
+     * announces your address to the tracker and then connects directly to every peer in the swarm;
+     * that is the protocol, not a leak. The library has no SOCKS support and cannot be given any —
+     * it dials raw NIO channels, which ignore the JVM's proxy properties, and DHT is UDP through a
+     * separate stack. Hiding the origin address is therefore a job for the network the process runs
+     * in (a tunnel, a namespace), not for a setting here.
+     *
+     * <p>What these settings <em>do</em> is stop the client volunteering more than it has to.
+     *
+     * @param encryption message-stream encryption. {@code PREFER_ENCRYPTED} is the default rather
+     *     than {@code REQUIRE_ENCRYPTED}: obfuscation defeats naive traffic classification, but
+     *     requiring it drops every peer that will not do it, which on a thin swarm can mean all of
+     *     them. It is not confidentiality against anyone watching the swarm itself.
+     * @param disableLocalServiceDiscovery stop announcing to the local network by multicast. On by
+     *     default: LSD tells every host on the LAN what this machine is downloading, which is
+     *     rarely what a server on a shared network wants, and it finds peers only on that LAN.
+     * @param disablePeerExchange stop trading peer lists with connected peers. Off by default —
+     *     PEX is how a swarm stays healthy without leaning on trackers, and disabling it costs
+     *     download speed to hide from peers who, being in the swarm, already see this client.
+     * @param acceptorAddress the local address to bind to, or blank for whatever the library picks.
+     *     Set this to a tunnel's address to keep torrent traffic off every other interface — the
+     *     one knob here that genuinely affects which address peers see, because the library binds
+     *     outgoing connections to it as well as the listening socket.
+     * @param acceptorPort the TCP port for incoming peer connections.
+     * @param maxPeerConnectionsPerTorrent ceiling on simultaneous peers for one torrent.
+     */
+    public record Network(
+            @NotNull Encryption encryption,
+            boolean disableLocalServiceDiscovery,
+            boolean disablePeerExchange,
+            String acceptorAddress,
+            @Positive int acceptorPort,
+            @Positive int maxPeerConnectionsPerTorrent) {}
+
+    /**
+     * Message-stream encryption policy, named to match the library's four values.
+     *
+     * <p>Declared here rather than reusing {@code bt.protocol.crypto.EncryptionPolicy} so that
+     * {@code shared.config} stays free of the BitTorrent driver, for the same reason the Redis
+     * driver is confined to its adapters: a configuration record is read by the whole application,
+     * and it should not drag a slice's dependency along with it. The acquisition adapter maps these
+     * names onto the library's enum, and a fitness function keeps {@code bt..} on its side of that
+     * line.
+     */
+    public enum Encryption {
+        REQUIRE_PLAINTEXT,
+        PREFER_PLAINTEXT,
+        PREFER_ENCRYPTED,
+        REQUIRE_ENCRYPTED
+    }
+
+    /**
+     * The provider log: which peers served which video.
+     *
+     * <p>Its own SQLite file rather than Redis or a sidecar JSON. Redis is optional here, expires
+     * everything under a TTL and in the reference deployment runs with persistence off, so a record
+     * meant to answer "who served this, and when" would not survive the week; a file beside the
+     * media is deleted with the media. SQLite is the smallest thing that is genuinely queryable
+     * across videos, and it adds no service to operate — which is the same reasoning ADR-0003 used
+     * for putting media on the filesystem.
+     *
+     * @param enabled off by default. It records addresses, and a feature that quietly starts
+     *     retaining personal data because it shipped is not a feature anyone consented to.
+     * @param databasePath the SQLite file. Under the data directory, so one volume covers it.
+     * @param geoipCityDatabase path to a City {@code .mmdb}, or blank to record no location. Not
+     *     bundled and not downloaded: MaxMind's GeoLite2 needs an account and a licence key, and
+     *     DB-IP and IP2Location publish compatible files that do not. Any of them works.
+     * @param geoipAsnDatabase path to an ASN {@code .mmdb}, or blank. Separate file from the city
+     *     one, and the more useful of the two — the network operator is a routing fact rather than
+     *     a guess at a location.
+     * @param retention how long a peer row outlives its last sighting. Addresses are personal data
+     *     under the LGPD; keeping them forever because a database makes it easy is not a decision
+     *     anyone made deliberately, so it is one made here.
+     * @param queueCapacity how many unwritten sightings to hold. The swarm reports from many
+     *     threads and SQLite writes from one, so there is a queue; past this it drops sightings
+     *     rather than growing, because a download must not stall to log what it is downloading from.
+     */
+    public record Providers(
+            boolean enabled,
+            @NotNull Path databasePath,
+            String geoipCityDatabase,
+            String geoipAsnDatabase,
+            @NotNull Duration retention,
+            @Positive int queueCapacity) {}
 
     /** Executor backing {@code @Async} transcoding work. */
     public record Transcoding(@NestedConfigurationProperty @Valid @NotNull Pool pool) {

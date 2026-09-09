@@ -139,7 +139,7 @@ class ArchitectureTest {
                 .that()
                 .areAnnotatedWith(org.springframework.web.bind.annotation.RestController.class)
                 .should()
-                .resideInAnyPackage(ROOT + ".playback.web..", ROOT + ".ingestion.web..")
+                .resideInAnyPackage(ROOT + ".playback.web..", ROOT + ".ingestion.web..", ROOT + ".providers.web..")
                 .check(classes);
     }
 
@@ -170,6 +170,22 @@ class ArchitectureTest {
                 .should()
                 .dependOnClassesThat()
                 .resideInAnyPackage("org.springframework.data.redis..", "io.lettuce..")
+                .check(classes);
+    }
+
+    @Test
+    @DisplayName("the BitTorrent driver stays behind its adapter")
+    void bitTorrentIsConfinedToAcquisition() {
+        // Same reasoning as the Redis rule, and it caught a real slip: a network setting typed as
+        // bt's own EncryptionPolicy put the BitTorrent library into StreamingProperties, which
+        // every slice reads. The swarm is acquisition's problem; the enum is declared in
+        // shared.config under our own name and mapped in the adapter.
+        noClasses()
+                .that()
+                .resideOutsideOfPackages(ROOT + ".acquisition..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("bt..", "com.google.inject..")
                 .check(classes);
     }
 

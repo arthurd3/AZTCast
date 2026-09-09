@@ -75,6 +75,41 @@ aztcast:
       download-timeout: 2h
       progress-log-interval: 5s
 
+      # How the client presents itself to the swarm. None of this is anonymity:
+      # BitTorrent announces to the tracker and dials every peer directly, and the
+      # library has no proxy support to bolt on. Hiding the origin address is the
+      # network's job (a tunnel, a namespace) — see acceptor-address.
+      network:
+        # PREFER_ENCRYPTED, not REQUIRE_: obfuscation beats naive traffic
+        # classification, but requiring it drops peers that will not do it.
+        encryption: PREFER_ENCRYPTED
+        # Multicast announces tell the whole LAN what this host is downloading,
+        # and only find peers on that LAN. Off.
+        disable-local-service-discovery: true
+        # Left on: PEX is how a swarm stays healthy without leaning on trackers,
+        # and it hides nothing from peers who are already in the swarm with us.
+        disable-peer-exchange: false
+        # Blank binds to whatever the library picks. Set it to a tunnel's address
+        # to keep torrent traffic off every other interface — it binds outgoing
+        # connections too, not just the listening socket.
+        acceptor-address: ""
+        acceptor-port: 6891
+        max-peer-connections-per-torrent: 200
+
+    # Who served each torrent. Off by default: it records peer addresses, which are
+    # personal data, and that should be a choice rather than a side effect of upgrading.
+    providers:
+      enabled: false
+      database-path: ./var/providers.db
+      # Point these at a City and an ASN .mmdb to record where peers are and whose
+      # network they are on. MaxMind GeoLite2 needs a free account and a licence key;
+      # DB-IP Lite and IP2Location LITE publish compatible files that need neither.
+      # Blank means peers are still logged, just without location.
+      geoip-city-database: ""
+      geoip-asn-database: ""
+      retention: 30d
+      queue-capacity: 10000
+
     transcoding:
       pool:
         # One ffmpeg process now encodes all five rungs at once, so a single job uses

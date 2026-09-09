@@ -88,7 +88,11 @@ public final class PropertiesFixture {
                     new StreamingProperties.Ffmpeg(
                             binary, "/bin/true", "libx264", Duration.ofSeconds(30), segmentDuration, renditions),
                     new StreamingProperties.Torrent(
-                            videoExtensions, Duration.ofSeconds(30), Duration.ofSeconds(1)),
+                            videoExtensions,
+                            Duration.ofSeconds(30),
+                            Duration.ofSeconds(1),
+                            new StreamingProperties.Network(
+                                    StreamingProperties.Encryption.PREFER_ENCRYPTED, true, false, "", 6891, 200)),
                     new StreamingProperties.Transcoding(
                             new StreamingProperties.Transcoding.Pool(1, 1, 10, "test-")),
                     new StreamingProperties.Playback(offloadEnabled, internalPrefix),
@@ -96,6 +100,8 @@ public final class PropertiesFixture {
                             redisEnabled,
                             Duration.ofDays(7),
                             new StreamingProperties.Redis.RateLimit(rateLimitCapacity, 20)),
+                    new StreamingProperties.Providers(
+                            false, java.nio.file.Path.of("providers.db"), "", "", Duration.ofDays(30), 1000),
                     new StreamingProperties.Web(List.of()));
         }
     }
