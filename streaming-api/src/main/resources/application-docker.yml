@@ -1,0 +1,33 @@
+# Container: media lives on a named volume, and nginx fronts both services so
+# every request the browser makes is same-origin.
+spring:
+  data:
+    redis:
+      host: redis
+      port: 6379
+      # Fail fast. A slow Redis must not become a slow API: these bound how long a request
+      # thread can be held hostage by an unhealthy cache.
+      timeout: 250ms
+      connect-timeout: 500ms
+
+server:
+  # Behind nginx, getRemoteAddr() returns the nginx container's address, so without this
+  # every client shares one rate-limit bucket and the per-IP limit is silently a global one.
+  forward-headers-strategy: framework
+
+aztcast:
+  streaming:
+    storage:
+      downloads-dir: /var/lib/aztcast/downloads
+      hls-dir: /var/lib/aztcast/hls
+      retention: 7d
+    playback:
+      # nginx is in front, the media volume is mounted read-only into it, and
+      # /_media is declared internal there. Segment bytes leave via sendfile and
+      # never touch a Tomcat thread.
+      offload-enabled: true
+      internal-prefix: /_media
+    redis:
+      enabled: true
+    web:
+      allowed-origins: []

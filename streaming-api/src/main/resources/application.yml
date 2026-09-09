@@ -1,0 +1,122 @@
+spring:
+  application:
+    name: streaming-api
+
+server:
+  port: 8080
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+aztcast:
+  streaming:
+    storage:
+      # Regenerable caches. Siblings under var/ so one ignore rule, one Docker
+      # volume and one `du` target cover both.
+      downloads-dir: ./var/downloads
+      hls-dir: ./var/hls
+      # Matches redis.job-ttl. Media outliving its job leaves directories nothing
+      # can name; a job outliving its media reports READY for a video that is gone.
+      retention: 7d
+
+    ffmpeg:
+      binary: ffmpeg
+      probe-binary: ffprobe
+      # Any H.264 encoder. Distros shipping a patent-free ffmpeg have libopenh264
+      # instead of libx264; both yield Main@3.1, matching the advertised CODECS.
+      video-codec: libx264
+      timeout: 30m
+      segment-duration: 4s
+      # Rungs are spaced ~1.6-1.8x apart so there is a usable step for roughly every
+      # doubling of bandwidth; too-close rungs cost encoding time and buy no adaptation.
+      # Order matters only for readability — the player picks by BANDWIDTH.
+      renditions:
+        - name: 1080p
+          width: 1920
+          height: 1080
+          video-bitrate-kbps: 5000
+          audio-bitrate-kbps: 128
+        - name: 720p
+          width: 1280
+          height: 720
+          video-bitrate-kbps: 3000
+          audio-bitrate-kbps: 128
+        - name: 480p
+          width: 854
+          height: 480
+          video-bitrate-kbps: 1500
+          audio-bitrate-kbps: 96
+        - name: 360p
+          width: 640
+          height: 360
+          video-bitrate-kbps: 900
+          audio-bitrate-kbps: 96
+        - name: 240p
+          width: 426
+          height: 240
+          video-bitrate-kbps: 500
+          audio-bitrate-kbps: 64
+
+    torrent:
+      video-extensions: [mp4, mkv, avi, mov, m4v, webm]
+      download-timeout: 2h
+      progress-log-interval: 5s
+
+    transcoding:
+      pool:
+        # One ffmpeg process now encodes all five rungs at once, so a single job uses
+        # far more CPU and out-of-heap memory than the old one-rung-at-a-time loop did.
+        # max-size is concurrent *videos*; it came down from 4 when the ladder went from
+        # two sequential rungs to five parallel ones. Raise it and the container memory
+        # limit together — docs/runbook.md records the exit-137 this causes.
+        core-size: 1
+        max-size: 2
+        queue-capacity: 500
+        thread-name-prefix: "transcode-"
+
+    playback:
+      # Off by default so `mvn spring-boot:run` serves bytes itself with no nginx
+      # in front. The docker profile turns it on, because that is the only
+      # topology where the internal location and the media volume both exist.
+      offload-enabled: false
+      # Must match the `internal` location in deploy/nginx/default.conf.
+      internal-prefix: /_media
+
+    redis:
+      # Off by default: the service starts and works with no Redis anywhere. Without it,
+      # job state is per-instance and lost on restart (as it always was), duplicate
+      # ingestions are not detected, and ingestion is not rate limited.
+      # Playback is unaffected either way — serving a segment never touches Redis.
+      enabled: false
+      # Should not outlive the media itself, or a job reports READY for a video that has
+      # already been deleted.
+      job-ttl: 7d
+      rate-limit:
+        # Small burst, modest sustained rate: one ingestion is hours of CPU and gigabytes
+        # of disk, so the useful limit is far lower than for an ordinary write endpoint.
+        capacity: 5
+        refill-per-hour: 20
+
+    web:
+      # Empty in production: nginx makes the player and the API same-origin.
+      allowed-origins: []
+
+logging:
+  level:
+    # WARN, not ERROR: ERROR hid bt's swarm and tracker warnings, which are
+    # exactly the diagnostics you need when a magnet stalls.
+    bt: WARN
+    lbms: WARN

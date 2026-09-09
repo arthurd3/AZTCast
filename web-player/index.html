@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>AZTCast — Player</title>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🎬 AZTCast — Player Adaptativo</h1>
+
+      <div class="controls">
+        <label for="magnetUrl">Enviar um torrent:</label><br /><br />
+        <input
+          type="text"
+          id="magnetUrl"
+          placeholder="magnet:?xt=urn:btih:…"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button id="ingestBtn" type="button">Enviar</button>
+        <div id="jobProgress" class="job-progress hidden"></div>
+      </div>
+
+      <div class="controls">
+        <label for="videoId">Ou tocar um vídeo já processado:</label><br /><br />
+        <input
+          type="text"
+          id="videoId"
+          placeholder="Cole o ID do vídeo (UUID)"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button id="loadBtn" type="button">Carregar Vídeo</button>
+      </div>
+
+      <div id="status" class="status hidden"></div>
+
+      <video id="video" controls crossorigin="anonymous" class="hidden"></video>
+
+      <div class="video-info">
+        <label for="qualitySelect">Qualidade:</label>
+        <select id="qualitySelect" class="hidden"></select>
+        <div id="videoInfo"></div>
+      </div>
+
+      <p class="video-info"><a href="/diagnostics.html">Diagnóstico HLS</a></p>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

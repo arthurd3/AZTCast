@@ -1,0 +1,39 @@
+# Tests never touch the real media directories and never shell out to ffmpeg.
+aztcast:
+  streaming:
+    storage:
+      downloads-dir: ${java.io.tmpdir}/aztcast-test/downloads
+      hls-dir: ${java.io.tmpdir}/aztcast-test/hls
+      retention: 7d
+    ffmpeg:
+      binary: /bin/true
+      video-codec: libx264
+      probe-binary: /bin/true
+      timeout: 10s
+      segment-duration: 4s
+      renditions:
+        - name: 240p
+          width: 426
+          height: 240
+          video-bitrate-kbps: 800
+          audio-bitrate-kbps: 128
+    torrent:
+      video-extensions: [mp4, mkv]
+      download-timeout: 5s
+      progress-log-interval: 1s
+    transcoding:
+      pool:
+        core-size: 1
+        max-size: 1
+        queue-capacity: 10
+        thread-name-prefix: "test-transcode-"
+    redis:
+      # Tests use the in-memory path unless they explicitly opt in; the Redis ones override
+      # this and bring their own container.
+      enabled: false
+      job-ttl: 7d
+      rate-limit:
+        capacity: 5
+        refill-per-hour: 20
+    web:
+      allowed-origins: []

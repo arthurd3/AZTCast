@@ -1,0 +1,27 @@
+/* The hand-rolled dark theme from the original inline <style>, named. */
+:root {
+  --color-bg: #111;
+  --color-surface: #222;
+  --color-surface-raised: #333;
+  --color-border: #555;
+  --color-text: #fff;
+  --color-text-muted: #ccc;
+
+  --color-accent: #007bff;
+  --color-accent-hover: #0056b3;
+  --color-disabled: #666;
+
+  --color-loading: #ffc107;
+  --color-loading-text: #000;
+  --color-success: #28a745;
+  --color-error: #dc3545;
+
+  --radius-sm: 5px;
+  --radius-md: 10px;
+  --space-sm: 10px;
+  --space-md: 20px;
+
+  --font-body: Arial, Helvetica, sans-serif;
+  --content-width: 1200px;
+  --video-width: 800px;
+}

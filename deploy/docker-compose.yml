@@ -1,0 +1,75 @@
+# Full stack: nginx serves the player and proxies /api to the API, so everything
+# the browser touches is same-origin and no CORS configuration is needed.
+#
+# Run from the repository root:
+#   docker compose -f deploy/docker-compose.yml up --build
+#
+# The player is then on http://localhost:8000 (or $WEB_PORT).
+
+name: aztcast
+
+services:
+  redis:
+    image: redis:7-alpine
+    # A bounded cache, not a database. allkeys-lru means memory pressure evicts rather than
+    # erroring, and every key this app writes has a TTL anyway — the bound is a backstop for
+    # a bug, not the retention policy.
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  streaming-api:
+    build:
+      context: ..
+      dockerfile: streaming-api/Dockerfile
+    image: aztcast/streaming-api:dev
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    volumes:
+      - media:/var/lib/aztcast
+    depends_on:
+      redis:
+        condition: service_healthy
+    # Sized for the JVM plus concurrent ffmpeg processes. ffmpeg's memory is
+    # outside the heap, and the pool's max-size is how many can run at once —
+    # raise both together or the container gets OOM-killed (exit 137).
+    deploy:
+      resources:
+        limits:
+          memory: 3g
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health/readiness"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  web-player:
+    build:
+      context: ..
+      dockerfile: web-player/Dockerfile
+    image: aztcast/web-player:dev
+    volumes:
+      # Read-only, and mounted for one reason: the API answers a segment request with
+      # an X-Accel-Redirect into /_media, and nginx can only honour that if it can see
+      # the file. Without this mount every segment 404s inside nginx.
+      #
+      # Read-only matters — nginx has no business writing here, and the transcoder is
+      # the only writer.
+      - media:/var/lib/aztcast:ro
+    ports:
+      # Override with WEB_PORT if 8000 is taken:  WEB_PORT=8100 docker compose ... up
+      - "${WEB_PORT:-8000}:80"
+    depends_on:
+      streaming-api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  # Downloads and HLS output. Regenerable, but large — delete it deliberately.
+  media:

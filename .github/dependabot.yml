@@ -1,0 +1,27 @@
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /streaming-api
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # The reason for pinning hls.js and committing a lockfile instead of loading
+  # it from a CDN at @latest: updates arrive as reviewable pull requests.
+  - package-ecosystem: npm
+    directory: /web-player
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+
+  - package-ecosystem: docker
+    directories:
+      - /streaming-api
+      - /web-player
+    schedule:
+      interval: monthly

@@ -1,0 +1,84 @@
+# ---------------------------------------------------------------------------
+# Build output
+# ---------------------------------------------------------------------------
+target/
+build/
+dist/
+!**/src/main/**/target/
+!**/src/test/**/target/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# ---------------------------------------------------------------------------
+# Maven
+# ---------------------------------------------------------------------------
+HELP.md
+.mvn/wrapper/maven-wrapper.jar
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+release.properties
+
+# ---------------------------------------------------------------------------
+# Node / frontend
+# ---------------------------------------------------------------------------
+node_modules/
+.vite/
+*.tsbuildinfo
+
+# ---------------------------------------------------------------------------
+# Runtime data — regenerable media caches, never versioned.
+# `var/` is the current layout; the two bare names are the pre-refactor dirs.
+# ---------------------------------------------------------------------------
+var/
+download-torrents/
+downloads/
+
+# ---------------------------------------------------------------------------
+# Logs — server.log was tracked before this refactor and leaked absolute paths.
+# ---------------------------------------------------------------------------
+*.log
+logs/
+nohup.out
+
+# ---------------------------------------------------------------------------
+# Secrets / local environment
+# ---------------------------------------------------------------------------
+.env
+.env.local
+.env.*.local
+!.env.example
+!.env.development
+
+# ---------------------------------------------------------------------------
+# IDE / editor
+# ---------------------------------------------------------------------------
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+
+### Eclipse / STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/nbdist/
+/.nb-gradle/
+
+### VS Code ###
+.vscode/
+
+# ---------------------------------------------------------------------------
+# OS cruft
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
