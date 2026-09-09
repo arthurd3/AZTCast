@@ -66,17 +66,40 @@ nginx serves the player and proxies `/api` to the API on the same origin.
 
 ## Using it
 
-Two pages. `/` is the library: everything already transcoded, newest first, each
+Three pages. `/` is the library: everything already transcoded, newest first, each
 with a poster frame and the name of the file it came from. Click one and it opens
-on `/player.html?v=<videoId>`, which is where video is watched.
+on `/player.html?v=<videoId>`, which is where video is watched. `/diagnostics.html`
+is the third: it compares what a manifest advertises against what the browser accepts
+and what the server actually serves.
 
 The library is read from disk rather than from job state, so a video is listed for
 as long as its media exists — a restart that loses every job record does not empty
-it.
+it. Search and sort act on the listing in the browser, not as a query: the endpoint
+returns everything on disk and the retention window keeps that small.
 
 Paste a magnet link on the library page and press **Enviar** to add one. It polls
 the job with a backoff and opens the watch page once it is `READY`; a failure shows
-its reason rather than a 404 you have to interpret.
+its reason rather than a 404 you have to interpret. The progress track shows elapsed
+time rather than a percentage, because nothing in the pipeline reports how far a
+torrent or an ffmpeg run has got.
+
+The player's controls are the application's own, not the browser's
+([ADR-0012](docs/decisions/0012-custom-player-controls.md)): buffered ranges are
+drawn on the seek bar, the quality ladder and playback speed live in one menu, and
+where you stopped is remembered per video in `localStorage` and offered back — never
+seeked to on its own.
+
+Keyboard, on the watch page. `?` shows the same list in the player.
+
+| | |
+| --- | --- |
+| `Espaço` `K` | reproduzir / pausar |
+| `J` `L` | −10 s / +10 s |
+| `←` `→` | −5 s / +5 s |
+| `↑` `↓` | volume |
+| `0`–`9` | saltar para 0%…90% |
+| `<` `>` | velocidade |
+| `M` `F` `P` | mudo, tela cheia, picture-in-picture |
 
 Same thing over HTTP, if you would rather:
 

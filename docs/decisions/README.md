@@ -17,3 +17,4 @@ editing it.
 | [0009](0009-redis-for-state-not-for-media.md)               | Redis for state and coordination, not media     | Accepted |
 | [0010](0010-the-player-drives-ingestion.md)                 | The player drives ingestion                     | Superseded in part by [0011](0011-the-library-replaces-manual-id-entry.md) |
 | [0011](0011-the-library-replaces-manual-id-entry.md)        | The library replaces manual videoId entry       | Accepted |
+| [0012](0012-custom-player-controls.md)                      | Custom player controls replace the native ones  | Accepted |
