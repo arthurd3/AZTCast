@@ -64,12 +64,39 @@ WEB_PORT=8100 docker compose -f deploy/docker-compose.yml up --build -d
 
 nginx serves the player and proxies `/api` to the API on the same origin.
 
+#### Through a VPN
+
+```bash
+cp deploy/vpn.env.example deploy/vpn.env      # then fill in your provider's keys
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.vpn.yml up --build
+```
+
+An overlay, so the stack above still runs without it. The API joins a
+[gluetun](https://github.com/qdm12/gluetun) container's network namespace, so every packet it
+sends — DHT's UDP included — leaves through the tunnel, and gluetun's firewall drops anything
+that would not. Trackers and peers then see the VPN's address instead of this machine's.
+
+**It is not anonymity.** The VPN provider still sees the traffic, and anyone who can compel or
+compromise them is back where they started. What it does is real and it is also all it does.
+Because the API shares the tunnel's namespace, a dropped VPN takes the API offline rather than
+falling back to the open internet — the safe failure, and the reason for doing it this way
+([ADR-0015](docs/decisions/0015-ip-masking-belongs-to-the-network.md)).
+
+Verify it is working:
+
+```bash
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.vpn.yml \
+  exec streaming-api curl -s https://ifconfig.me      # the VPN's address, not yours
+```
+
 ## Using it
 
-Three pages. `/` is the library: everything already transcoded, newest first, each
+Four pages. `/` is the library: everything already transcoded, newest first, each
 with a poster frame and the name of the file it came from. Click one and it opens
-on `/player.html?v=<videoId>`, which is where video is watched. `/diagnostics.html`
-is the third: it compares what a manifest advertises against what the browser accepts
+on `/player.html?v=<videoId>`, which is where video is watched. `/providers.html` is
+where each download came from — a world map of the peers that served it, drawn from data
+compiled into the build so the page makes no external request at all. `/diagnostics.html`
+is the fourth: it compares what a manifest advertises against what the browser accepts
 and what the server actually serves.
 
 The library is read from disk rather than from job state, so a video is listed for
@@ -79,9 +106,47 @@ returns everything on disk and the retention window keeps that small.
 
 Paste a magnet link on the library page and press **Enviar** to add one. It polls
 the job with a backoff and opens the watch page once it is `READY`; a failure shows
-its reason rather than a 404 you have to interpret. The progress track shows elapsed
-time rather than a percentage, because nothing in the pipeline reports how far a
-torrent or an ffmpeg run has got.
+its reason rather than a 404 you have to interpret. The download step carries a real
+percentage — the swarm reports pieces — while transcoding shows elapsed time only,
+because ffmpeg reports nothing this pipeline reads and a bar that stalls is worse
+than no bar.
+
+**Reloading the page no longer loses the download.** The library asks
+`GET /api/v1/videos/active` on load and picks any ingestion still running back up,
+percentage and elapsed time intact
+([ADR-0013](docs/decisions/0013-an-ingestion-survives-the-page-that-started-it.md)).
+A resumed one does not steal the page: it reports when it is ready rather than
+navigating there on its own.
+
+### Who served it
+
+With `aztcast.streaming.providers.enabled` set, every peer seen for a download is recorded to a
+SQLite file and shown under the progress track while it runs: address and port, the client
+software, **how many bytes it actually sent**, whether it is seeding or still fetching, and how
+often it connected. Point `geoip-city-database` and `geoip-asn-database` at any MaxMind-format
+`.mmdb` — GeoLite2 needs a free account, DB-IP Lite and IP2Location LITE do not — and each
+address also resolves to a country, a city and a network operator, read from that local file.
+
+**`/providers.html` is where it all comes back.** Totals, a world map of every place that
+served something, and one row per video that opens into its peer table. The map has no tile
+layer: country outlines are bundled, so nothing is fetched from anyone and the page works
+offline ([ADR-0016](docs/decisions/0016-the-provenance-map-is-drawn-offline.md)). Positions
+are city-level estimates drawn as areas, never points — GeoIP cannot locate a street, and a
+map that could zoom to one would be lying.
+
+It also ranks who is serving you — by client, country and network — and marks each peer that sits
+on a **probable datacenter or VPN** rather than a home connection, or that has turned up in more
+than one of your downloads. Both are read from the operator name already stored, so neither costs a
+request.
+
+The page reports **the address peers say they see you as**, taken from their handshakes. That is the
+only direct evidence there is that the VPN above is actually masking anything.
+
+It is **off by default**, and worth knowing why before switching it on: peer addresses are
+personal data under the LGPD, so rows expire after 30 days and nothing about a lookup leaves
+this machine. It is also worth knowing the ceiling — BitTorrent exposes an address, a port and
+a self-reported client string, and nothing that names a person
+([ADR-0014](docs/decisions/0014-a-provider-log-in-sqlite.md)).
 
 The player's controls are the application's own, not the browser's
 ([ADR-0012](docs/decisions/0012-custom-player-controls.md)): buffered ranges are
