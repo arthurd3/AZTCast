@@ -23,6 +23,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(import.meta.dirname, 'index.html'),
+        player: resolve(import.meta.dirname, 'player.html'),
         diagnostics: resolve(import.meta.dirname, 'diagnostics.html'),
       },
       output: {

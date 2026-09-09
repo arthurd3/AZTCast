@@ -24,26 +24,11 @@
       </div>
 
       <div class="controls">
-        <label for="videoId">Ou tocar um vídeo já processado:</label><br /><br />
-        <input
-          type="text"
-          id="videoId"
-          placeholder="Cole o ID do vídeo (UUID)"
-          autocomplete="off"
-          spellcheck="false"
-        />
-        <button id="loadBtn" type="button">Carregar Vídeo</button>
+        <h2 class="library-heading">Ou tocar um vídeo já processado:</h2>
+        <div id="library" class="library"></div>
       </div>
 
       <div id="status" class="status hidden"></div>
-
-      <video id="video" controls crossorigin="anonymous" class="hidden"></video>
-
-      <div class="video-info">
-        <label for="qualitySelect">Qualidade:</label>
-        <select id="qualitySelect" class="hidden"></select>
-        <div id="videoInfo"></div>
-      </div>
 
       <p class="video-info"><a href="/diagnostics.html">Diagnóstico HLS</a></p>
     </div>

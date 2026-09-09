@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>AZTCast — Player</title>
+  </head>
+  <body>
+    <div class="container">
+      <p class="back"><a href="/index.html">← Voltar à biblioteca</a></p>
+
+      <h1 id="videoTitle" class="player-title">Carregando…</h1>
+
+      <div id="status" class="status hidden"></div>
+
+      <video id="video" controls crossorigin="anonymous" class="hidden"></video>
+
+      <div class="video-info">
+        <label for="qualitySelect">Qualidade:</label>
+        <select id="qualitySelect" class="hidden"></select>
+        <div id="videoInfo"></div>
+      </div>
+
+      <p class="video-info"><a href="/diagnostics.html">Diagnóstico HLS</a></p>
+    </div>
+
+    <script type="module" src="/src/player.js"></script>
+  </body>
+</html>

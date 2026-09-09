@@ -158,6 +158,108 @@ select {
   font-family: monospace;
 }
 
+/* Watch page */
+
+.back {
+  margin: 0 0 var(--space-sm);
+  text-align: left;
+  font-size: 14px;
+}
+
+/* Wraps rather than truncates: a torrent filename is long, and the whole point of showing it is
+   that the viewer can tell which video this is. */
+.player-title {
+  font-size: 20px;
+  margin: 0 0 var(--space-md);
+  word-break: break-word;
+}
+
+/* Video library */
+
+.library-heading {
+  margin: 0 0 var(--space-md);
+  font-size: 16px;
+}
+
+/* A grid, so the cards form columns instead of inheriting the page's centred flow. Same problem
+   .steps has, and the same fix: the block stays centred, the text inside it goes left. */
+.library {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-sm);
+  text-align: left;
+}
+
+/* A button so it is focusable and works from the keyboard without a hand-rolled tabindex. That
+   means overriding the bare `button` rule above, which paints every button in the accent colour. */
+.video-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-sm);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  text-align: left;
+}
+
+.video-card:hover:not(:disabled) {
+  background: var(--color-surface-raised);
+  border-color: var(--color-accent);
+}
+
+.video-card.selected {
+  border-color: var(--color-accent);
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+
+/* Fixed ratio so cards keep their height whether or not a poster loads, and the grid does not
+   reflow as lazy images arrive. */
+.video-card-thumb {
+  aspect-ratio: 16 / 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
+}
+
+.video-card-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* No poster: anything encoded before posters existed, or a source ffmpeg found no frame in. */
+.video-card-thumb.empty::after {
+  content: '🎬';
+  font-size: 28px;
+  opacity: 0.35;
+}
+
+.video-card-title {
+  font-size: 15px;
+  word-break: break-word;
+}
+
+.video-card-meta {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+/* Spans the grid so an empty or failed library reads as one message, not a lone card. */
+.library-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 14px;
+  color: var(--color-text-muted);
+}
+
+.library-note.error {
+  color: var(--color-error);
+}
+
 /* Diagnostics page */
 .diagnostics {
   text-align: left;
