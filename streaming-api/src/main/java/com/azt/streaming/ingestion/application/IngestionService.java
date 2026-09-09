@@ -5,6 +5,7 @@ import com.azt.streaming.ingestion.domain.MagnetRegistry;
 import com.azt.streaming.ingestion.domain.StreamJob;
 import com.azt.streaming.ingestion.domain.StreamJobNotFoundException;
 import com.azt.streaming.ingestion.domain.StreamJobRepository;
+import com.azt.streaming.ingestion.domain.StreamJobStatus;
 import com.azt.streaming.shared.storage.MediaStorage;
 import com.azt.streaming.shared.storage.VideoCatalog;
 import com.azt.streaming.transcoding.domain.MediaTranscoder;
@@ -12,8 +13,10 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -94,13 +97,23 @@ public class IngestionService {
 
         log.info("Ingestion {} started", videoId);
 
+        // Closed before the status moves off DOWNLOADING, so a progress tick that was already in
+        // flight cannot write the job back to DOWNLOADING once transcoding has started. The status
+        // check inside recordProgress covers what this narrow flag cannot.
+        final AtomicBoolean downloading = new AtomicBoolean(true);
+
         torrentDownloader
-                .download(magnetUrl, downloadDirectory)
+                .download(videoId, magnetUrl, downloadDirectory, percent -> {
+                    if (downloading.get()) {
+                        recordProgress(videoId, percent);
+                    }
+                })
                 // thenCompose, not thenAccept. The previous version called the transcoder and threw
                 // the returned future away, so the chain completed as soon as the *download* did and
                 // every transcoding failure vanished — no log line, no status, nothing.
                 .thenCompose(
                         videoFile -> {
+                            downloading.set(false);
                             log.info("Ingestion {} downloaded to {}, transcoding", videoId, videoFile);
                             jobRepository.save(job.transcoding(clock.instant()));
                             // The downloaded filename is the only human-readable name this pipeline
@@ -117,8 +130,12 @@ public class IngestionService {
                                 jobRepository.save(job.ready(clock.instant()));
                                 ready.increment();
                             } else {
+                                downloading.set(false);
                                 log.error("Ingestion {} failed", videoId, error);
-                                jobRepository.save(job.failed(rootCauseMessage(error), clock.instant()));
+                                // Re-read so the failure keeps however far the download actually got,
+                                // rather than resetting it to the 0% this closure captured at start.
+                                StreamJob latest = jobRepository.findById(videoId).orElse(job);
+                                jobRepository.save(latest.failed(rootCauseMessage(error), clock.instant()));
                                 failed.increment();
                                 // Release on failure, or a magnet that failed once could never be
                                 // retried until its claim expired.
@@ -127,6 +144,22 @@ public class IngestionService {
                         });
 
         return job;
+    }
+
+    /**
+     * Writes a download percentage onto the job, if it is still downloading.
+     *
+     * <p>Re-read rather than derived from the job this ingestion started with: that record is a
+     * snapshot from before the download began, and saving a mutation of it would undo any transition
+     * that happened in between. The status check is what makes a late tick harmless — see the
+     * {@code onProgress} contract on {@link TorrentDownloader}.
+     */
+    private void recordProgress(String videoId, int percent) {
+        jobRepository
+                .findById(videoId)
+                .filter(current -> current.status() == StreamJobStatus.DOWNLOADING)
+                .filter(current -> current.progressPercent() != percent)
+                .ifPresent(current -> jobRepository.save(current.withProgress(percent, clock.instant())));
     }
 
     /**
@@ -150,6 +183,17 @@ public class IngestionService {
 
     public StreamJob findJob(String videoId) {
         return jobRepository.findById(videoId).orElseThrow(() -> new StreamJobNotFoundException(videoId));
+    }
+
+    /**
+     * Ingestions still downloading or transcoding, so a client that lost its ids can find them again.
+     *
+     * <p>The repository has been able to answer this since durable job state arrived, but only
+     * startup asked — which left a browser refresh as the one way to permanently lose track of a
+     * download that was still running perfectly well.
+     */
+    public List<StreamJob> listActiveJobs() {
+        return jobRepository.findUnfinished();
     }
 
     private static String rootCauseMessage(Throwable error) {

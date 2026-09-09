@@ -60,6 +60,27 @@ public class IngestionController {
     }
 
     /**
+     * Ingestions still running, so a client that lost track of one can pick it back up.
+     *
+     * <p>Separate from the catalogue above rather than merged into it, which ADR-0011 decided
+     * deliberately: an in-progress ingestion has nothing to play, and listing it beside finished
+     * videos would put entries in the library that cannot be clicked. What that decision did not
+     * anticipate is that the id lived only in the tab that started the ingestion — so a refresh
+     * abandoned a perfectly healthy download with no way back to it. This is that way back.
+     *
+     * <p>Mapped above {@code /{videoId}} and matched ahead of it regardless of order: Spring ranks a
+     * literal segment over a template one. Ids are UUIDs, so nothing can collide with "active".
+     *
+     * <p>{@code no-store} for the same reason as the listing: the answer changes as jobs finish.
+     */
+    @GetMapping("/active")
+    public ResponseEntity<List<StreamJobResponse>> listActiveJobs() {
+        List<StreamJobResponse> active =
+                ingestionService.listActiveJobs().stream().map(StreamJobResponse::from).toList();
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(active);
+    }
+
+    /**
      * Polling endpoint. Without it there was no way to distinguish "still transcoding" from "failed"
      * — both looked like a 404 on the master playlist.
      */

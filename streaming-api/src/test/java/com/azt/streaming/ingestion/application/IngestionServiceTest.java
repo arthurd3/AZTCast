@@ -22,9 +22,11 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.IntConsumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -80,7 +82,7 @@ class IngestionServiceTest {
 
     @Test
     void returnsImmediatelyWithTheJobDownloading() {
-        given(torrentDownloader.download(any(), any())).willReturn(new CompletableFuture<>());
+        given(torrentDownloader.download(any(), any(), any(), any())).willReturn(new CompletableFuture<>());
 
         StreamJob job = service.startIngestion(MAGNET);
 
@@ -92,7 +94,7 @@ class IngestionServiceTest {
     @Test
     void reachesReadyOnlyAfterTranscodingCompletes() {
         CompletableFuture<Void> transcode = new CompletableFuture<>();
-        given(torrentDownloader.download(any(), any()))
+        given(torrentDownloader.download(any(), any(), any(), any()))
                 .willReturn(CompletableFuture.completedFuture(VIDEO_FILE));
         given(mediaTranscoder.transcodeToHls(any(), any())).willReturn(transcode);
 
@@ -110,7 +112,7 @@ class IngestionServiceTest {
     void recordsTheDownloadedFilenameAsTheTitle() {
         // The only human-readable name this pipeline ever sees, and it is gone once the reaper takes
         // the download directory — so it has to be captured while the path is still in hand.
-        given(torrentDownloader.download(any(), any()))
+        given(torrentDownloader.download(any(), any(), any(), any()))
                 .willReturn(CompletableFuture.completedFuture(VIDEO_FILE));
         given(mediaTranscoder.transcodeToHls(any(), any())).willReturn(new CompletableFuture<>());
 
@@ -121,7 +123,7 @@ class IngestionServiceTest {
 
     @Test
     void recordsTranscodingFailuresThatUsedToVanish() {
-        given(torrentDownloader.download(any(), any()))
+        given(torrentDownloader.download(any(), any(), any(), any()))
                 .willReturn(CompletableFuture.completedFuture(VIDEO_FILE));
         given(mediaTranscoder.transcodeToHls(any(), any()))
                 .willReturn(
@@ -135,7 +137,7 @@ class IngestionServiceTest {
 
     @Test
     void recordsAcquisitionFailures() {
-        given(torrentDownloader.download(any(), any()))
+        given(torrentDownloader.download(any(), any(), any(), any()))
                 .willReturn(
                         CompletableFuture.failedFuture(new TorrentDownloadException("No video file found")));
 
@@ -147,7 +149,7 @@ class IngestionServiceTest {
 
     @Test
     void exposesTheStreamUrlOnlyWhenReady() {
-        given(torrentDownloader.download(any(), any()))
+        given(torrentDownloader.download(any(), any(), any(), any()))
                 .willReturn(CompletableFuture.completedFuture(VIDEO_FILE));
         given(mediaTranscoder.transcodeToHls(any(), any()))
                 .willReturn(CompletableFuture.completedFuture(null));
@@ -161,6 +163,73 @@ class IngestionServiceTest {
     @Test
     void throwsForAnUnknownJob() {
         assertThatThrownBy(() -> service.findJob("nope")).isInstanceOf(StreamJobNotFoundException.class);
+    }
+
+    @Test
+    void publishesDownloadProgressOntoTheJob() {
+        // The percentage the swarm reports is the only measured progress in the pipeline, and it used
+        // to reach a log line and nothing else — so a caller polling the job could not tell a torrent
+        // moving at 90% from one stuck at 2%.
+        given(torrentDownloader.download(any(), any(), any(), any())).willReturn(new CompletableFuture<>());
+
+        String videoId = service.startIngestion(MAGNET).videoId();
+        progressSink().accept(42);
+
+        assertThat(service.findJob(videoId).progressPercent()).isEqualTo(42);
+    }
+
+    @Test
+    void ignoresProgressOnceTheDownloadIsOver() {
+        // A tick already in flight can land after the download completes. Without the status guard it
+        // would write DOWNLOADING back over TRANSCODING, and the job would claim to be downloading
+        // for the whole of a transcode that is already running.
+        given(torrentDownloader.download(any(), any(), any(), any()))
+                .willReturn(CompletableFuture.completedFuture(VIDEO_FILE));
+        given(mediaTranscoder.transcodeToHls(any(), any())).willReturn(new CompletableFuture<>());
+
+        String videoId = service.startIngestion(MAGNET).videoId();
+        progressSink().accept(99);
+
+        StreamJob job = service.findJob(videoId);
+        assertThat(job.status()).isEqualTo(StreamJobStatus.TRANSCODING);
+        assertThat(job.progressPercent()).as("the download did finish").isEqualTo(100);
+    }
+
+    @Test
+    void keepsHowFarADownloadGotWhenItFails() {
+        CompletableFuture<Path> download = new CompletableFuture<>();
+        given(torrentDownloader.download(any(), any(), any(), any())).willReturn(download);
+
+        String videoId = service.startIngestion(MAGNET).videoId();
+        progressSink().accept(37);
+        download.completeExceptionally(new TorrentDownloadException("No seeders"));
+
+        StreamJob job = service.findJob(videoId);
+        assertThat(job.status()).isEqualTo(StreamJobStatus.FAILED);
+        assertThat(job.progressPercent()).as("not reset to the 0% the job started at").isEqualTo(37);
+    }
+
+    @Test
+    void listsOnlyIngestionsStillRunning() {
+        // What a refreshed browser asks for: the downloads it can still pick back up.
+        given(torrentDownloader.download(any(), any(), any(), any()))
+                .willReturn(new CompletableFuture<>())
+                .willReturn(CompletableFuture.completedFuture(VIDEO_FILE));
+        given(mediaTranscoder.transcodeToHls(any(), any()))
+                .willReturn(CompletableFuture.completedFuture(null));
+
+        String running = service.startIngestion(MAGNET).videoId();
+        String finished = service.startIngestion(MAGNET + "2").videoId();
+
+        assertThat(service.listActiveJobs()).extracting(StreamJob::videoId).containsExactly(running);
+        assertThat(service.findJob(finished).status()).isEqualTo(StreamJobStatus.READY);
+    }
+
+    /** The progress callback the service handed to the downloader. */
+    private IntConsumer progressSink() {
+        ArgumentCaptor<IntConsumer> captor = ArgumentCaptor.forClass(IntConsumer.class);
+        Mockito.verify(torrentDownloader).download(any(), any(), any(), captor.capture());
+        return captor.getValue();
     }
 
     private StreamJobStatus status(String videoId) {

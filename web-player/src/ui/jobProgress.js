@@ -13,11 +13,11 @@ const STEPS = [
  * contain ffmpeg or tracker output, i.e. arbitrary text. The same reasoning is written down
  * in videoInfo.js.
  *
- * There is no percentage anywhere in here on purpose. Nothing in the pipeline reports how far
- * a torrent or an ffmpeg run has got, so any bar would be invented — and an invented bar that
- * stalls is worse than no bar. What is shown instead is elapsed time, computed from the job's
- * own createdAt, which is true even when the API deduplicates onto an ingestion that started
- * ten minutes ago.
+ * The percentage is shown for the download and nowhere else. The swarm reports pieces, so that
+ * number is measured; ffmpeg reports nothing this pipeline reads, so transcoding shows no bar
+ * rather than an invented one — an invented bar that stalls is worse than no bar. Elapsed time
+ * carries every stage, computed from the job's own createdAt, which stays true even when the API
+ * deduplicates onto an ingestion that started ten minutes ago.
  */
 export function createJobProgress(container) {
   let ticker = null;
@@ -77,6 +77,16 @@ export function createJobProgress(container) {
       label.textContent = step.label;
 
       item.append(node, label);
+
+      // Only against the step it actually measures, and only while that step is running: a
+      // percentage frozen at 100 next to "Transcodificando" would read as the transcode's own.
+      if (step.status === 'DOWNLOADING' && state === 'active' && hasPercent(job)) {
+        const percent = document.createElement('span');
+        percent.className = 'job-step__percent';
+        percent.textContent = `${job.progressPercent}%`;
+        item.appendChild(percent);
+      }
+
       track.appendChild(item);
     });
 
@@ -91,6 +101,10 @@ export function createJobProgress(container) {
     );
 
     const children = [track];
+
+    if (job.status === 'DOWNLOADING' && hasPercent(job)) {
+      children.push(bar(job.progressPercent));
+    }
 
     if (job.status === 'FAILED' && job.failureReason) {
       const reason = document.createElement('p');
@@ -108,6 +122,29 @@ export function createJobProgress(container) {
       ticker = window.setInterval(updateElapsed, 1000);
     }
     updateElapsed();
+  }
+
+  /**
+   * The download bar.
+   *
+   * A real progressbar role rather than a styled div: the width is the only thing a sighted
+   * viewer reads, and without aria-valuenow there is nothing left for anyone else.
+   */
+  function bar(percent) {
+    const track = document.createElement('div');
+    track.className = 'job-progress__bar';
+    track.setAttribute('role', 'progressbar');
+    track.setAttribute('aria-valuenow', String(percent));
+    track.setAttribute('aria-valuemin', '0');
+    track.setAttribute('aria-valuemax', '100');
+    track.setAttribute('aria-label', 'Progresso do download');
+
+    const fill = document.createElement('div');
+    fill.className = 'job-progress__bar-fill';
+    fill.style.width = `${percent}%`;
+
+    track.appendChild(fill);
+    return track;
   }
 
   function footer(job) {
@@ -135,6 +172,11 @@ export function createJobProgress(container) {
 
   clear();
   return { render, clear };
+}
+
+/** Whether the API sent a usable percentage. Older builds of it did not send one at all. */
+function hasPercent(job) {
+  return Number.isFinite(job.progressPercent);
 }
 
 /** The video id with a copy button, because the next thing anyone does with it is copy it. */

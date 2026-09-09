@@ -1,11 +1,13 @@
 /*
  * The ingestion track: DOWNLOADING -> TRANSCODING -> READY.
  *
- * Horizontal nodes on a wire rather than the old vertical "○ ● ✓" list. The active segment
- * carries a travelling shimmer and *no percentage* — nothing in this pipeline knows how far a
- * torrent or an ffmpeg run has got, and a fake bar that stalls at 90% is the single most
- * distrusted thing in progress UI. Elapsed time is the honest substitute: it is real, it always
- * moves, and it lets the viewer judge for themselves whether to keep waiting.
+ * Horizontal nodes on a wire rather than the old vertical "○ ● ✓" list.
+ *
+ * The download step carries a real percentage, because the swarm reports pieces and that number
+ * is measured. Transcoding does not: ffmpeg tells this pipeline nothing, so that segment keeps
+ * the travelling shimmer and no bar. A fake bar stalling at 90% is the single most distrusted
+ * thing in progress UI, and having one honest bar is not a reason to invent a second. Elapsed
+ * time still runs under every stage, so there is always something true that moves.
  */
 @layer components {
   .job-progress {
@@ -69,6 +71,31 @@
   .job-step__label {
     font-size: var(--text-sm);
     color: var(--text-dim);
+  }
+
+  .job-step__percent {
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  /* ---- The download bar ---- */
+
+  .job-progress__bar {
+    height: 6px;
+    overflow: hidden;
+    border-radius: var(--radius-full);
+    background: color-mix(in oklab, var(--starlight) 12%, transparent);
+  }
+
+  .job-progress__bar-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: var(--accent);
+    /* Polled once a second and it only ever moves forward, so the width eases between samples
+       rather than stepping. Collapses to nothing under prefers-reduced-motion with the token. */
+    transition: width var(--dur-slow) var(--ease-out);
   }
 
   /* ---- Done ---- */

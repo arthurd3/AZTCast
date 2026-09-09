@@ -49,6 +49,44 @@ export async function getStreamJob(videoId) {
 }
 
 /**
+ * Ingestions still downloading or transcoding.
+ *
+ * The library listing cannot answer this: it is built from what is on disk, so a video appears
+ * only once it is finished. Without this endpoint a reload had no way to find a download that was
+ * still running, which is exactly what made refreshing the page lose it.
+ */
+export async function listActiveJobs() {
+  const response = await fetch(`${API_BASE_URL}/api/v1/videos/active`);
+  return handle(response);
+}
+
+/**
+ * The peers that served one video: address, port, client software, and where the address looks
+ * like it is. Empty when nothing was recorded; 404 when the provider log is switched off, which
+ * callers should treat as "not recording" rather than as an error.
+ */
+export async function listVideoPeers(videoId) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/videos/${encodeURIComponent(videoId)}/peers`,
+  );
+  return handle(response);
+}
+
+/**
+ * Totals, one entry per downloaded video, and one entry per place on the map.
+ *
+ * One request for the whole provenance page: the three are views of a single aggregate the API
+ * computes in SQL, and asking per video would be slower for the same answer. 404s when the
+ * provider log is switched off, which callers should report as "not recording" rather than as a
+ * failure.
+ */
+export async function getProviderSummary(videoId) {
+  const query = videoId ? `?videoId=${encodeURIComponent(videoId)}` : '';
+  const response = await fetch(`${API_BASE_URL}/api/v1/providers/summary${query}`);
+  return handle(response);
+}
+
+/**
  * Videos whose ladder is on disk and can be played, newest first.
  *
  * Read from the filesystem by the API, not from job state: a video outlives the record of the

@@ -68,6 +68,36 @@ class IngestionControllerTest {
     }
 
     @Test
+    @DisplayName("lists in-flight ingestions so a refreshed page can pick them back up")
+    void listsActiveJobs() throws Exception {
+        given(ingestionService.listActiveJobs())
+                .willReturn(
+                        List.of(
+                                StreamJob.downloading(VIDEO_ID, MAGNET, NOW).withProgress(64, NOW),
+                                StreamJob.downloading(OLDER_ID, MAGNET, NOW).transcoding(NOW)));
+
+        mockMvc.perform(get("/api/v1/videos/active"))
+                .andExpect(status().isOk())
+                // Never cached: the answer changes the moment an ingestion finishes.
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$[0].videoId").value(VIDEO_ID))
+                .andExpect(jsonPath("$[0].progressPercent").value(64))
+                .andExpect(jsonPath("$[1].status").value("TRANSCODING"));
+    }
+
+    @Test
+    @DisplayName("\"active\" is the listing, not a video id")
+    void doesNotTreatActiveAsAVideoId() throws Exception {
+        // Spring ranks a literal segment above a template one, so /active cannot be swallowed by
+        // /{videoId}. Pinned because the two mappings are one refactor away from swapping order.
+        given(ingestionService.listActiveJobs()).willReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/videos/active")).andExpect(status().isOk());
+
+        org.mockito.Mockito.verify(ingestionService, org.mockito.Mockito.never()).findJob(any());
+    }
+
+    @Test
     void reportsFailuresWithAReason() throws Exception {
         given(ingestionService.findJob(VIDEO_ID))
                 .willReturn(StreamJob.downloading(VIDEO_ID, MAGNET, NOW).failed("No video file found", NOW));

@@ -15,6 +15,7 @@ import java.time.Instant;
 public record StreamJobResponse(
         String videoId,
         StreamJobStatus status,
+        int progressPercent,
         String streamUrl,
         String failureReason,
         Instant createdAt,
@@ -24,6 +25,7 @@ public record StreamJobResponse(
         return new StreamJobResponse(
                 job.videoId(),
                 job.status(),
+                job.progressPercent(),
                 job.streamUrl(),
                 job.failureReason(),
                 job.createdAt(),
