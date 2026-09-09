@@ -43,7 +43,8 @@ com.azt.streaming
 │   └── application/      IngestionService, InMemoryStreamJobRepository
 └── shared/
     ├── config/           StreamingProperties, Async/Cors/Clock configuration
-    ├── storage/          MediaStorage (port), FileSystemMediaStorage
+    ├── storage/          MediaStorage (port), FileSystemMediaStorage, MediaReaper,
+    │                     VideoCatalog, CatalogEntry
     └── error/            GlobalExceptionHandler, ProblemTypes
 ```
 
@@ -57,6 +58,21 @@ in a unit test, so `TorrentDownloader` and `MediaTranscoder` are what make
 Every other interface in the previous code existed for no reason and was
 deleted. A one-implementation interface with no test double and no seam is a
 liability, not abstraction.
+
+## The catalogue reads the disk, not the job records
+
+`VideoCatalog` answers "what can be watched" by listing HLS directories that have a
+`master.m3u8` — the file transcoding writes last, so its presence is the readiness signal.
+
+It deliberately does not consult `StreamJobRepository`. Job state is per-process when Redis is off
+(the default) and expires under a TTL when it is on, while the media outlives both, so a catalogue
+built on jobs goes empty after a restart with videos still sitting in the HLS root. That is not
+hypothetical: it is the state a `docker compose` box lands in, because Redis runs with `--save ""`.
+
+The one thing the disk cannot supply is a name, so ingestion writes `meta.json` beside the media
+before the transcode starts. It lives inside the video's own directory so the reaper takes both at
+once and they cannot drift apart. See
+[ADR-0011](decisions/0011-the-library-replaces-manual-id-entry.md).
 
 ## `shared/storage` is the only place that builds a path
 

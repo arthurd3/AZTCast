@@ -46,7 +46,44 @@ ingestion, as before.
 Ingestion is rate limited per client (default: burst of 5, 20/hour sustained).
 The response is `application/problem+json` with type
 `https://aztcast.dev/problems/rate-limited` and a `Retry-After` header in
-seconds. Playback is **not** rate limited.
+seconds. Playback is **not** rate limited, and neither is any safe method — the
+bucket bounds the side effect of `POST`, and `GET /api/v1/videos` shares its path.
+
+## `GET /api/v1/videos`
+
+Everything that can be watched, newest first.
+
+```http
+200 OK
+Cache-Control: no-store
+
+[
+  {
+    "videoId": "2724a02c-f275-49d2-8389-e76bfeacd4c6",
+    "title": "Big.Buck.Bunny.2008.1080p.mkv",
+    "streamUrl": "/api/v1/stream/2724a02c-f275-49d2-8389-e76bfeacd4c6/master.m3u8",
+    "posterUrl": "/api/v1/stream/2724a02c-f275-49d2-8389-e76bfeacd4c6/poster.jpg",
+    "qualities": ["1080p", "720p", "480p", "360p", "240p"],
+    "sizeBytes": 13048576,
+    "readyAt": "2026-09-08T22:38:11Z"
+  }
+]
+```
+
+**Read from disk, not from job state**, and the difference is visible in practice: a video whose
+job record has expired or was lost to a restart is still listed here while
+`GET /api/v1/videos/{videoId}` answers `404` for it. A video appears once its `master.m3u8`
+exists — the file the pipeline writes last — and disappears when the reaper deletes its media.
+
+`posterUrl` is **omitted** when no poster frame exists — anything transcoded before posters did,
+or a source ffmpeg could not read a frame out of. Clients should draw a placeholder rather than
+request it anyway.
+
+`title` is **omitted** when nothing recorded one. It comes from a `meta.json` written beside the
+media at transcode time, so anything transcoded before that existed has no name to give; clients
+should fall back to the `videoId`.
+
+Not rate limited, and `no-store`: the list changes the moment an ingestion finishes.
 
 ## `GET /api/v1/videos/{videoId}`
 
@@ -59,8 +96,12 @@ Progress of an ingestion.
 | `READY`       | `streamUrl` is present and the video can be played.       |
 | `FAILED`      | `failureReason` explains why.                             |
 
-`404` if no job is known for that id. **Job state is in memory** and does not
-survive a restart — see [ADR-0003](decisions/0003-filesystem-as-the-store.md).
+`404` if no job is known for that id — which is not the same as "no such video".
+Job state is in memory unless `aztcast.streaming.redis.enabled` is set, and expires
+under a TTL when it is, while the media outlives both. To ask what exists rather
+than how an ingestion went, use [`GET /api/v1/videos`](#get-apiv1videos). See
+[ADR-0009](decisions/0009-redis-for-state-not-for-media.md) and
+[ADR-0011](decisions/0011-the-library-replaces-manual-id-entry.md).
 
 ## Playback
 
@@ -71,7 +112,7 @@ a job is in progress — poll the job endpoint rather than retrying blindly.
 
 ### `GET /api/v1/stream/{videoId}/{file}`
 
-Variant playlists and segments.
+Variant playlists, segments, and the poster frame (`poster.jpg`).
 
 | Extension | Content-Type                    |
 | --------- | ------------------------------- |
@@ -79,6 +120,7 @@ Variant playlists and segments.
 | `.ts`     | `video/mp2t`                    |
 | `.m4s`    | `video/iso.segment`             |
 | `.mp4`    | `video/mp4`                     |
+| `.jpg`    | `image/jpeg`                    |
 
 > **This path shape is frozen.** hls.js resolves variant playlists and segments
 > relative to the master URL, so changing either mapping breaks every player.

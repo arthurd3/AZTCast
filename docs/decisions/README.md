@@ -15,4 +15,5 @@ editing it.
 | [0007](0007-nginx-serves-the-bytes.md)                      | nginx serves the bytes; the API authorises      | Accepted |
 | [0008](0008-cmaf-ladder-in-one-pass.md)                     | A CMAF ladder, keyframe-aligned, in one pass    | Accepted |
 | [0009](0009-redis-for-state-not-for-media.md)               | Redis for state and coordination, not media     | Accepted |
-| [0010](0010-the-player-drives-ingestion.md)                 | The player drives ingestion                     | Accepted |
+| [0010](0010-the-player-drives-ingestion.md)                 | The player drives ingestion                     | Superseded in part by [0011](0011-the-library-replaces-manual-id-entry.md) |
+| [0011](0011-the-library-replaces-manual-id-entry.md)        | The library replaces manual videoId entry       | Accepted |

@@ -66,11 +66,17 @@ nginx serves the player and proxies `/api` to the API on the same origin.
 
 ## Using it
 
-Open the player, paste a magnet link, press **Enviar**. It polls the job with a
-backoff and loads the video itself once it is `READY`; a failure shows its
-reason rather than a 404 you have to interpret.
+Two pages. `/` is the library: everything already transcoded, newest first, each
+with a poster frame and the name of the file it came from. Click one and it opens
+on `/player.html?v=<videoId>`, which is where video is watched.
 
-The `videoId` field below it replays something ingested earlier.
+The library is read from disk rather than from job state, so a video is listed for
+as long as its media exists — a restart that loses every job record does not empty
+it.
+
+Paste a magnet link on the library page and press **Enviar** to add one. It polls
+the job with a backoff and opens the watch page once it is `READY`; a failure shows
+its reason rather than a 404 you have to interpret.
 
 Same thing over HTTP, if you would rather:
 
