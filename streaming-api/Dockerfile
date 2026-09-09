@@ -27,7 +27,7 @@ RUN java -Djarmode=tools -jar target/streaming-api-*.jar extract --layers --laun
 # ---------------------------------------------------------------------------
 # Runtime
 # ---------------------------------------------------------------------------
-FROM eclipse-temurin:21-jre AS runtime
+FROM eclipse-temurin:25-jre AS runtime
 
 # ffmpeg is a hard runtime dependency that nothing used to declare: the service
 # shells out to it for every transcode. Debian's build includes libx264, which is
