@@ -2,6 +2,7 @@ package com.azt.streaming.shared.ratelimit;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.Set;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 /**
@@ -16,11 +17,19 @@ import org.springframework.web.servlet.HandlerInterceptor;
  * <p>It also runs before argument resolution, so a throttled request is rejected without parsing or
  * validating its body.
  *
+ * <p>Safe methods are never limited, whatever routes this is registered for. The bucket exists to
+ * bound a side effect — making the server download an arbitrary torrent — and a GET has none. It
+ * matters because {@code POST} and {@code GET} share {@code /api/v1/videos} and the registry matches
+ * on path alone: without this, listing the library would spend ingestion tokens and start answering
+ * 429 after five page loads.
+ *
  * <p>Not a {@code @Component}: it is constructed by the configuration that decides which routes it
  * guards. Component-scanning it would also register it into every {@code @WebMvcTest} slice, which
  * auto-includes {@code HandlerInterceptor} beans.
  */
 public class RateLimitInterceptor implements HandlerInterceptor {
+
+    private static final Set<String> SAFE_METHODS = Set.of("GET", "HEAD", "OPTIONS");
 
     private final RateLimiter rateLimiter;
 
@@ -30,6 +39,9 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        if (SAFE_METHODS.contains(request.getMethod())) {
+            return true;
+        }
         String client = request.getRemoteAddr();
         RateLimitDecision decision = rateLimiter.tryConsume(client);
         if (!decision.allowed()) {
