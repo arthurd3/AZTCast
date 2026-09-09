@@ -42,7 +42,11 @@ async function inspect() {
   if (!videoId) {
     return;
   }
-  const url = masterPlaylistUrl(videoId);
+  // Absolute, deliberately. masterPlaylistUrl() is root-relative whenever VITE_API_BASE_URL is
+  // unset — which is the default and what production runs — and `new URL(child, base)` throws on
+  // a relative base. That threw below on every inspection, unhandled, so the run died silently
+  // after the codec check and left the status on "Inspecionando…".
+  const url = new URL(masterPlaylistUrl(videoId), window.location.href).href;
   status.show('Inspecionando…', 'loading');
   log(`GET ${url}`);
 
@@ -77,15 +81,25 @@ async function inspect() {
     log(`  CODECS="${codec}" -> isTypeSupported: ${supported}`, supported ? 'ok' : 'error');
   }
 
-  await inspectFirstVariant(manifest, url);
-  status.show('Inspeção concluída.', 'success');
+  // Reported rather than left to reject: a throw in here is precisely what used to make the
+  // page look like it was still working when it had already given up.
+  let checkedSegment = false;
+  try {
+    checkedSegment = await inspectFirstVariant(manifest, url);
+  } catch (error) {
+    log(`  falhou ao seguir a primeira variante: ${error.message}`, 'error');
+  }
+  status.show(
+    checkedSegment ? 'Inspeção concluída.' : 'Inspeção concluída com falhas.',
+    checkedSegment ? 'success' : 'error',
+  );
 }
 
 /** Follows the first variant and HEADs its first segment, to see the MIME the server sends. */
 async function inspectFirstVariant(manifest, masterUrl) {
   const variant = manifest.split('\n').find((line) => line.trim() && !line.startsWith('#'));
   if (!variant) {
-    return;
+    return false;
   }
   const variantUrl = new URL(variant.trim(), masterUrl).href;
   log(`GET ${variantUrl}`);
@@ -93,14 +107,14 @@ async function inspectFirstVariant(manifest, masterUrl) {
   const response = await fetch(variantUrl);
   log(`  ${response.status} ${response.headers.get('content-type') ?? '(sem content-type)'}`);
   if (!response.ok) {
-    return;
+    return false;
   }
 
   const media = await response.text();
   const segment = media.split('\n').find((line) => line.trim() && !line.startsWith('#'));
   if (!segment) {
     log('  variante sem segmentos', 'warn');
-    return;
+    return false;
   }
 
   const segmentUrl = new URL(segment.trim(), variantUrl).href;
@@ -110,6 +124,7 @@ async function inspectFirstVariant(manifest, masterUrl) {
   // A .ts served as application/octet-stream is the classic cause of bufferAppend errors.
   const looksRight = /video\/(mp2t|mp4|iso\.segment)/.test(contentType);
   log(`  ${head.status} ${contentType}`, looksRight ? 'ok' : 'error');
+  return true;
 }
 
 function play() {
