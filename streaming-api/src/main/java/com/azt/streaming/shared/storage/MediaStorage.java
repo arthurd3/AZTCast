@@ -1,6 +1,7 @@
 package com.azt.streaming.shared.storage;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -17,6 +18,14 @@ public interface MediaStorage {
     /** Filename of the HLS master playlist, written by transcoding and served by playback. */
     String MASTER_PLAYLIST = "master.m3u8";
 
+    /**
+     * Filename of the poster frame, written by transcoding and served by playback.
+     *
+     * <p>Optional: an encode that produced a playable ladder but no readable frame is still a
+     * video, so nothing treats its absence as an error.
+     */
+    String POSTER = "poster.jpg";
+
     /** Directory a torrent for {@code videoId} downloads into. Created on demand. */
     Path downloadDirectoryFor(String videoId);
 
@@ -30,4 +39,17 @@ public interface MediaStorage {
      * @param fileName a playlist or segment name, from the request
      */
     Optional<Path> resolveHlsAsset(String videoId, String fileName);
+
+    /**
+     * Directories of videos whose ladder is complete, i.e. whose master playlist exists.
+     *
+     * <p>The master playlist is written last, so its presence is the signal that the whole ladder is
+     * ready. That makes this the durable answer to "what can be played right now" — job state is not:
+     * it is per-process when Redis is off (the default) and expires under a TTL when it is on, while
+     * the media outlives both.
+     *
+     * <p>Returns directories rather than ids because every caller needs to read inside them, and
+     * handing back a name would only make them rebuild the path this class exists to own.
+     */
+    List<Path> listReadyVideoDirectories();
 }

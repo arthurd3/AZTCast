@@ -6,7 +6,9 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -65,6 +67,24 @@ public class FileSystemMediaStorage implements MediaStorage {
             return Optional.empty();
         }
         return Files.isRegularFile(asset) ? Optional.of(asset) : Optional.empty();
+    }
+
+    @Override
+    public List<Path> listReadyVideoDirectories() {
+        if (!Files.isDirectory(hlsRoot)) {
+            return List.of();
+        }
+        try (Stream<Path> entries = Files.list(hlsRoot)) {
+            return entries.filter(Files::isDirectory)
+                    .filter(directory -> Files.isRegularFile(directory.resolve(MASTER_PLAYLIST)))
+                    .toList();
+        } catch (IOException e) {
+            // An unreadable root is an operational problem, not the caller's. Answering "no videos"
+            // keeps the listing endpoint up while it is investigated, which beats a 500 that tells a
+            // viewer nothing they can act on.
+            log.warn("Could not list {} for the catalogue", hlsRoot, e);
+            return List.of();
+        }
     }
 
     /**

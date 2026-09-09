@@ -186,6 +186,11 @@ class RealFfmpegLadderTest {
             public Optional<Path> resolveHlsAsset(String videoId, String fileName) {
                 return Optional.of(hlsDirectory.resolve(fileName));
             }
+
+            @Override
+            public List<Path> listReadyVideoDirectories() {
+                return List.of();
+            }
         };
     }
 
