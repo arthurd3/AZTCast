@@ -58,7 +58,7 @@ jobs:
 
       - name: Fail if a backend URL was hardcoded again
         run: |
-          if grep -rn 'localhost:8080' src/ index.html player.html diagnostics.html; then
+          if grep -rn 'localhost:8080' src/ index.html player.html diagnostics.html providers.html; then
             echo "::error::Hardcoded backend URL. Use API_BASE_URL from src/config.js."
             exit 1
           fi

@@ -23,6 +23,8 @@
 @import './components/launch.css';
 @import './components/card.css';
 @import './components/steps.css';
+@import './components/peers.css';
+@import './components/atlas.css';
 @import './components/menu.css';
 @import './components/player.css';
 @import './components/console.css';

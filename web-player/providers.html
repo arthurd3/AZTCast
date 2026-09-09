@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0d16" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>AZTCast — Fornecedores</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Pular para o conteúdo</a>
+
+    <div class="shell">
+      <header class="site-header">
+        <a class="brand" href="/index.html">
+          <img class="brand__mark" src="/brand.svg" width="32" height="32" alt="" />
+          <span>AZTCast<span class="brand__sub"> · fornecedores</span></span>
+        </a>
+      </header>
+
+      <main id="main">
+        <p class="eyebrow">Proveniência</p>
+        <h1>De onde veio cada vídeo</h1>
+        <p class="muted" style="max-width: 68ch; margin-top: var(--space-3)">
+          Cada par que serviu um download, no mapa e na tabela. As posições são estimadas a partir
+          do endereço IP contra uma base local — são regiões aproximadas, nunca endereços. Nenhuma
+          consulta sai desta máquina, nem para localizar um par nem para desenhar o mapa.
+        </p>
+
+        <div id="status" class="banner hidden" role="status" aria-live="polite"></div>
+
+        <section id="totals" class="atlas__totals" aria-label="Totais"></section>
+
+        <section class="atlas" aria-labelledby="mapTitle">
+          <div class="atlas__head">
+            <h2 id="mapTitle" class="atlas__title">Mapa</h2>
+            <p id="mapCaption" class="atlas__caption"></p>
+          </div>
+          <div
+            id="map"
+            class="atlas__map"
+            role="img"
+            aria-label="Mapa-múndi com a origem aproximada dos pares"
+          ></div>
+        </section>
+
+        <section class="atlas__breakdown" aria-labelledby="breakdownTitle">
+          <div class="section-head">
+            <h2 id="breakdownTitle">Quem está servindo</h2>
+            <p class="muted">Os mais frequentes de cada tipo, por número de pares.</p>
+          </div>
+          <div id="breakdown" class="breakdown"></div>
+        </section>
+
+        <section class="atlas__videos" aria-labelledby="videosTitle">
+          <div class="section-head">
+            <h2 id="videosTitle">Vídeos</h2>
+            <p class="muted">Selecione um para filtrar o mapa e ver os pares dele.</p>
+          </div>
+          <div id="videos" class="provenance-list"></div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <span>AZTCast · streaming HLS adaptativo</span>
+        <a href="/index.html">Voltar à biblioteca</a>
+      </footer>
+    </div>
+
+    <script type="module" src="/src/providers.js"></script>
+  </body>
+</html>
