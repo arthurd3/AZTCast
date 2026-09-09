@@ -82,3 +82,6 @@ nohup.out
 # ---------------------------------------------------------------------------
 .DS_Store
 Thumbs.db
+
+# VPN credentials for the gluetun overlay. The example file is committed; this is not.
+deploy/vpn.env

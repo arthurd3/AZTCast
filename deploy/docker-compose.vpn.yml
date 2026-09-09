@@ -1,0 +1,88 @@
+# Routes torrent traffic through a VPN, and stops it leaving any other way.
+#
+# An overlay, not a replacement — the base stack still runs on its own:
+#
+#   cp deploy/vpn.env.example deploy/vpn.env      # then fill it in
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.vpn.yml up --build
+#
+# What this actually buys, stated plainly. Trackers and peers see the VPN's address
+# instead of this machine's, which is real and is the point. It is not anonymity: the
+# VPN provider can still see the traffic, and anyone who can compel or compromise them
+# is back to where they started. Nothing here defeats an adversary at that level, and a
+# setup that claims otherwise is lying.
+#
+# The whole API shares gluetun's network namespace, so the tunnel dropping takes the API
+# offline with it. That is the safe failure and it is deliberate: the alternative is a
+# kill-switch that fails open, which is not a kill-switch. If you would rather the API
+# kept serving finished video while only acquisition is confined, acquisition has to move
+# into a container of its own — a bigger change than this file.
+
+name: aztcast
+
+services:
+  gluetun:
+    image: qmcgaw/gluetun:v3
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    env_file:
+      # Not committed. See vpn.env.example for the keys your provider needs.
+      - ./vpn.env
+    environment:
+      # The kill switch. On, gluetun's iptables rules drop anything that is not going
+      # through the tunnel, so a dropped VPN means no traffic rather than traffic in the
+      # clear — which is the whole reason for running it this way.
+      FIREWALL: "on"
+      # ...with one hole, and it has to be here: the API still has to reach Redis, and
+      # nginx still has to reach the API. Both are inside this compose network, which the
+      # firewall would otherwise treat like any other destination. Must match the subnet
+      # pinned at the bottom of this file.
+      FIREWALL_OUTBOUND_SUBNETS: "172.29.0.0/16"
+      # Torrent traffic is chatty and gluetun logs every connection at debug.
+      LOG_LEVEL: info
+    ports:
+      # The API's port is published here rather than on streaming-api: a container using
+      # network_mode: service: has no network stack of its own and cannot declare ports.
+      # Only bound to loopback — nothing outside this host needs to reach the API directly,
+      # since nginx is the front door.
+      - "127.0.0.1:8080:8080"
+      # Incoming peer connections, if your provider gives you a forwarded port. Without
+      # one the swarm still works, outbound-only, with fewer peers.
+      - "${TORRENT_PORT:-6891}:6891/tcp"
+      - "${TORRENT_PORT:-6891}:6891/udp"
+    networks:
+      default:
+        aliases:
+          # So nginx's existing `proxy_pass http://streaming-api:8080` keeps resolving.
+          # streaming-api itself no longer appears in DNS once it shares this namespace,
+          # and the name now points here — which is the same place, one hop earlier.
+          - streaming-api
+    healthcheck:
+      test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  streaming-api:
+    # Shares gluetun's network stack entirely: every packet this process sends, including
+    # DHT's UDP and every peer connection, leaves through the tunnel. This is why no proxy
+    # setting is needed in the application — and why none would have worked, since the
+    # BitTorrent library dials raw NIO channels that ignore the JVM's proxy properties.
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+networks:
+  default:
+    ipam:
+      config:
+        # Pinned so FIREWALL_OUTBOUND_SUBNETS above can name it. Docker's default pool is
+        # allocated at creation time, and a firewall rule cannot be written against a
+        # subnet nobody knows yet.
+        - subnet: 172.29.0.0/16
