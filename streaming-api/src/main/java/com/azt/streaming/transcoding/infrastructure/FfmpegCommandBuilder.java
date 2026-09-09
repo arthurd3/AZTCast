@@ -38,6 +38,12 @@ import org.springframework.stereotype.Component;
 @Component
 public class FfmpegCommandBuilder {
 
+    /**
+     * Poster width in pixels. Twice the ~240px the library renders a card at, so the thumbnail is
+     * not soft on a high-density display. Height follows the source aspect ratio.
+     */
+    private static final int POSTER_WIDTH = 480;
+
     private final String binary;
     private final String videoCodec;
     private final Duration segmentDuration;
@@ -108,6 +114,42 @@ public class FfmpegCommandBuilder {
                 "-var_stream_map", variantStreamMap(ladder, includeAudio),
                 outputDirectory.resolve("%v.m3u8").toString()));
 
+        return List.copyOf(command);
+    }
+
+    /**
+     * A single still frame, for the library to show as a thumbnail.
+     *
+     * <p>Uses the {@code thumbnail} filter rather than taking whatever frame the seek lands on: it
+     * scores a batch of frames and picks the most representative, which is what keeps posters from
+     * being the black frame or fade-in that so many files open on.
+     *
+     * <p>{@code seek} is optional because nothing here knows the source's duration —
+     * {@link com.azt.streaming.transcoding.domain.ProbedVideo} does not carry one. Seeking past the
+     * end fails the command rather than producing a frame, so the caller asks for an offset first
+     * and retries from the start if that happens.
+     *
+     * @param seek where to start reading, or null to start at the beginning
+     */
+    public List<String> buildPoster(Path inputFile, Path outputFile, Duration seek) {
+        List<String> command = new ArrayList<>();
+        command.add(binary);
+        command.add("-y");
+        if (seek != null) {
+            // Before -i, so ffmpeg seeks the input rather than decoding and discarding up to it.
+            command.addAll(List.of("-ss", String.valueOf(seek.toSeconds())));
+        }
+        command.addAll(List.of(
+                "-i", inputFile.toString(),
+                // The first video stream specifically: a container may also carry cover art, and
+                // -frames:v against an unmapped input can pick it.
+                "-map", "0:v:0",
+                "-an",
+                "-vf", "thumbnail,scale=w=%d:h=-2".formatted(POSTER_WIDTH),
+                "-frames:v", "1",
+                "-q:v", "4",
+                "-f", "image2",
+                outputFile.toString()));
         return List.copyOf(command);
     }
 

@@ -113,6 +113,27 @@ class FfmpegCommandBuilderTest {
         assertThat(valueOf(command(), "-c:a:0")).isEqualTo("aac");
     }
 
+    @Test
+    void buildsAPosterCommandThatSeeksBeforeTheInput() {
+        List<String> poster = builder.buildPoster(Path.of("/in/movie.mkv"), OUT.resolve("poster.jpg"), Duration.ofSeconds(5));
+
+        // -ss before -i is input seeking: ffmpeg jumps, rather than decoding and discarding.
+        assertThat(poster.indexOf("-ss")).isLessThan(poster.indexOf("-i"));
+        assertThat(valueOf(poster, "-ss")).isEqualTo("5");
+        assertThat(valueOf(poster, "-vf")).isEqualTo("thumbnail,scale=w=480:h=-2");
+        assertThat(valueOf(poster, "-frames:v")).isEqualTo("1");
+        assertThat(poster.getLast()).isEqualTo("/out/vid/poster.jpg");
+    }
+
+    @Test
+    void omitsTheSeekEntirelyWhenThereIsNone() {
+        // The retry for a source shorter than the offset: seeking past the end produces no frame at
+        // all, so the fallback has to start from the beginning rather than seek to zero.
+        List<String> poster = builder.buildPoster(Path.of("/in/short.mkv"), OUT.resolve("poster.jpg"), null);
+
+        assertThat(poster).doesNotContain("-ss");
+    }
+
     private static String valueOf(List<String> command, String flag) {
         int index = command.indexOf(flag);
         assertThat(index).as("flag %s present", flag).isNotNegative();

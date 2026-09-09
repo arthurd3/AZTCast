@@ -26,6 +26,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class FfmpegMediaTranscoder implements MediaTranscoder {
 
+    /** How far into the source to look for a poster frame before falling back to the start. */
+    private static final Duration POSTER_SEEK = Duration.ofSeconds(5);
+
     private final MediaStorage mediaStorage;
     private final MediaProbe mediaProbe;
     private final FfmpegCommandBuilder commandBuilder;
@@ -85,6 +88,10 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
 
             List<EncodedRendition> encoded = measure(videoDirectory, source.hasAudio());
 
+            // Before the master playlist, so a video is never listed without the thumbnail the
+            // library expects to draw beside it.
+            writePoster(inputFile, videoDirectory, videoId);
+
             // Written last, so its presence is the signal that the whole ladder is ready. Playback
             // 404s until this exists, which is exactly the behaviour the player expects.
             masterPlaylistWriter.write(videoDirectory, encoded);
@@ -101,6 +108,28 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
                     .tag("rungs", String.valueOf(ladder.size()))
                     .register(meterRegistry));
         }
+    }
+
+    /**
+     * Extracts the poster frame, and never fails the ingestion over it.
+     *
+     * <p>Two attempts. The first seeks in, because the opening seconds of a real file are titles,
+     * logos or black; the second starts from the beginning, because nothing here knows the source's
+     * duration and a clip shorter than the offset fails the seek outright. A video with no readable
+     * frame at all is still a video, so the third outcome is a warning and no poster.
+     */
+    private void writePoster(Path inputFile, Path videoDirectory, String videoId) {
+        Path poster = videoDirectory.resolve(MediaStorage.POSTER);
+        for (Duration seek : List.of(POSTER_SEEK, Duration.ZERO)) {
+            try {
+                processRunner.run(
+                        commandBuilder.buildPoster(inputFile, poster, seek.isZero() ? null : seek), timeout);
+                return;
+            } catch (RuntimeException e) {
+                log.debug("Poster attempt at {} failed for videoId {}", seek, videoId, e);
+            }
+        }
+        log.warn("No poster frame could be extracted for videoId {}; the library will show a placeholder", videoId);
     }
 
     /**
