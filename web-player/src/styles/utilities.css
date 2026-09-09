@@ -1,0 +1,28 @@
+/*
+ * Utilities: the last layer, so these win over any component without needing !important
+ * on anything but .hidden (which must also beat inline display from a component's own
+ * `display:flex`).
+ *
+ * In its own file rather than at the end of base.css because layer order here is *source*
+ * order: the build strips the standalone `@layer a, b, c;` declaration from main.css and
+ * merges each layer where it is first seen. Keeping this block inside base.css therefore
+ * registered `utilities` before `components`, and it only came out right by accident.
+ */
+@layer utilities {
+  .hidden {
+    display: none !important;
+  }
+
+  /* Present to assistive tech, invisible on screen. For live regions and control labels. */
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+}

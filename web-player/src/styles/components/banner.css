@@ -1,0 +1,61 @@
+/*
+ * The status strip.
+ *
+ * Was a solid amber/green/red block with bold text. Now a tinted panel with a coloured rail
+ * on the leading edge: the same three states, but they stop shouting over the page they are
+ * reporting on.
+ */
+@layer components {
+  .banner {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border);
+    border-inline-start: 3px solid var(--text-dim);
+    border-radius: var(--radius-sm);
+    background: color-mix(in oklab, var(--surface) 70%, transparent);
+    font-size: var(--text-sm);
+    line-height: var(--leading-snug);
+  }
+
+  .banner--loading {
+    border-inline-start-color: var(--info);
+    background: var(--info-quiet);
+    color: var(--text);
+  }
+
+  .banner--success {
+    border-inline-start-color: var(--ok);
+    background: var(--ok-quiet);
+  }
+
+  .banner--error {
+    border-inline-start-color: var(--danger);
+    background: var(--danger-quiet);
+  }
+
+  /* A quiet pulse while loading, so a long wait still looks alive. */
+  .banner--loading::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    margin-top: 0.45em;
+    flex: none;
+    border-radius: var(--radius-full);
+    background: var(--info);
+    animation: banner-pulse 1.6s var(--ease-in-out) infinite;
+  }
+
+  @keyframes banner-pulse {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.35;
+      transform: scale(0.7);
+    }
+  }
+}

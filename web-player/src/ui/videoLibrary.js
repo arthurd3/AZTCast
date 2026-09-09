@@ -1,4 +1,6 @@
 import { listVideos, posterUrl } from '../api/streamClient.js';
+import { fraction } from '../player/progressStore.js';
+import { icon } from './icons.js';
 
 const WHEN = new Intl.DateTimeFormat('pt-BR', {
   day: '2-digit',
@@ -10,31 +12,102 @@ const WHEN = new Intl.DateTimeFormat('pt-BR', {
 
 const SIZE = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 
+/** How many placeholder cards to show while the listing is in flight. */
+const SKELETON_COUNT = 8;
+
 /**
  * The list of watchable videos, which replaced pasting a UUID into a text field.
  *
- * Built from DOM nodes rather than innerHTML, and here the habit earns its keep more than anywhere
- * else in this app: a title is the filename from inside a torrent, so it is text a stranger chose.
- * The same reasoning is written down in jobProgress.js and videoInfo.js.
+ * Built from DOM nodes rather than innerHTML, and here the habit earns its keep more than
+ * anywhere else in this app: a title is the filename from inside a torrent, so it is text a
+ * stranger chose. The same reasoning is written down in jobProgress.js and videoInfo.js.
+ *
+ * Filtering and sorting happen here, over the array the listing already returned. There is no
+ * query parameter to send: `GET /api/v1/videos` returns everything on disk and the retention
+ * window keeps that small, so a round trip per keystroke would buy nothing.
  */
-export function createVideoLibrary(container, { onSelect }) {
+export function createVideoLibrary(container, { onSelect, onLoad, exclude, emptyAction } = {}) {
   /** Kept outside render() so a refresh does not lose the highlight on what is playing. */
   let selectedId = null;
+  /** Everything the API returned, before the toolbar narrows it. */
+  let all = [];
+  let view = { query: '', sort: 'recent' };
 
-  function note(text, kind) {
-    const paragraph = document.createElement('p');
-    paragraph.className = kind ? `library-note ${kind}` : 'library-note';
-    paragraph.textContent = text;
-    container.replaceChildren(paragraph);
+  function note(title, body, kind, action) {
+    const wrapper = document.createElement('div');
+    wrapper.className = kind ? `library-note library-note--${kind}` : 'library-note';
+
+    if (kind !== 'error') {
+      wrapper.appendChild(constellation());
+    }
+
+    const heading = document.createElement('p');
+    heading.className = 'library-note__title';
+    heading.textContent = title;
+
+    const text = document.createElement('p');
+    text.className = 'library-note__body';
+    text.textContent = body;
+
+    wrapper.append(heading, text);
+
+    // An empty library is the first thing a new install shows, so it gets a way out of itself
+    // rather than only an explanation. The rail on the watch page passes none and hides instead.
+    if (action) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn btn--primary';
+      button.textContent = action.label;
+      button.addEventListener('click', action.onClick);
+      wrapper.appendChild(button);
+    }
+
+    container.replaceChildren(wrapper);
   }
 
-  function render(videos) {
-    if (videos.length === 0) {
-      note('Nenhum vídeo processado ainda. Envie um magnet acima.');
-      return;
+  function skeleton() {
+    const cards = Array.from({ length: SKELETON_COUNT }, () => {
+      const card = document.createElement('div');
+      card.className = 'skeleton-card';
+
+      const thumb = document.createElement('div');
+      thumb.className = 'skeleton skeleton-card__thumb';
+
+      const line = document.createElement('div');
+      line.className = 'skeleton skeleton-card__line';
+
+      const short = document.createElement('div');
+      short.className = 'skeleton skeleton-card__line skeleton-card__line--short';
+
+      card.append(thumb, line, short);
+      return card;
+    });
+    container.replaceChildren(...cards);
+    // The grid is a live region for the count, but eight shimmering boxes are not news.
+    container.setAttribute('aria-busy', 'true');
+  }
+
+  function render() {
+    container.removeAttribute('aria-busy');
+    const videos = arrange(all, view);
+
+    if (all.length === 0) {
+      note(
+        'Nenhum vídeo ainda',
+        'Cole um link magnet no campo acima. Quando a transcodificação terminar, o vídeo aparece aqui.',
+        null,
+        emptyAction,
+      );
+      return videos.length;
     }
+    if (videos.length === 0) {
+      note('Nada corresponde à busca', `Nenhum título contém “${view.query}”. Tente outro termo.`);
+      return 0;
+    }
+
     container.replaceChildren(...videos.map(card));
     highlight();
+    return videos.length;
   }
 
   function card(video) {
@@ -43,44 +116,107 @@ export function createVideoLibrary(container, { onSelect }) {
     button.className = 'video-card';
     button.dataset.videoId = video.videoId;
 
-    const title = document.createElement('span');
-    title.className = 'video-card-title';
-    // No title means the video was transcoded before the API recorded one. The id is all there is.
-    title.textContent = video.title ?? shortId(video.videoId);
+    const title = video.title ?? shortId(video.videoId);
+    // The card is one control, so it gets one name. Without this the accessible name would be
+    // the poster, the badges and the metadata read end to end.
+    button.setAttribute('aria-label', `Assistir ${title}`);
+
+    const body = document.createElement('span');
+    body.className = 'video-card__body';
+
+    const name = document.createElement('span');
+    name.className = 'video-card__title';
+    name.textContent = title;
 
     const meta = document.createElement('span');
-    meta.className = 'video-card-meta';
+    meta.className = 'video-card__meta';
     meta.textContent = describe(video);
 
-    button.append(thumbnail(video), title, meta);
-    button.addEventListener('click', () => onSelect(video.videoId));
+    body.append(name, meta);
+    button.append(thumbnail(video), body);
+    button.addEventListener('click', () => onSelect?.(video.videoId));
     return button;
   }
 
   function highlight() {
     container.querySelectorAll('.video-card').forEach((element) => {
-      element.classList.toggle('selected', element.dataset.videoId === selectedId);
+      const current = element.dataset.videoId === selectedId;
+      element.classList.toggle('video-card--selected', current);
+      element.setAttribute('aria-current', current ? 'true' : 'false');
     });
   }
 
   return {
     async load() {
+      skeleton();
       try {
-        render(await listVideos());
+        const listed = await listVideos();
+        // The watch page's rail passes the video already playing, so it is not offered as
+        // somewhere to go next.
+        all = exclude ? listed.filter((video) => video.videoId !== exclude) : listed;
       } catch (error) {
-        // Rendered here rather than in the status banner, which belongs to playback: a library that
-        // failed to load should not look like a video that failed to play.
-        note(`Não foi possível carregar a lista: ${error.message}`, 'error');
+        container.removeAttribute('aria-busy');
+        // Rendered here rather than in the status banner, which belongs to ingestion: a library
+        // that failed to load should not look like a magnet that failed to submit.
+        note('Não foi possível carregar a biblioteca', error.message, 'error');
+        onLoad?.({ total: 0, shown: 0, failed: true });
+        return;
       }
+      const shown = render();
+      onLoad?.({ total: all.length, shown, failed: false });
     },
+
+    /** Re-renders from the cached listing. Returns how many cards are now on screen. */
+    filter(next) {
+      view = { ...view, ...next };
+      return render();
+    },
+
     select(videoId) {
       selectedId = videoId;
       highlight();
     },
+
     clear() {
       container.replaceChildren();
     },
   };
+}
+
+/** Narrows and orders the listing for the current toolbar state. */
+function arrange(videos, { query, sort }) {
+  const needle = fold(query.trim());
+  const matched = needle
+    ? videos.filter((video) => fold(video.title ?? video.videoId).includes(needle))
+    : [...videos];
+
+  const order = {
+    recent: (left, right) => Date.parse(right.readyAt) - Date.parse(left.readyAt),
+    title: (left, right) => label(left).localeCompare(label(right), 'pt-BR'),
+    size: (left, right) => right.sizeBytes - left.sizeBytes,
+    quality: (left, right) => height(right) - height(left),
+  };
+  return matched.sort(order[sort] ?? order.recent);
+}
+
+/**
+ * Accent- and case-insensitive, because the titles are Portuguese filenames and nobody types
+ * "Ilhá" to find "Ilha". NFD splits a letter from its accent; the range then drops the accent.
+ */
+function fold(text) {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function label(video) {
+  return video.title ?? video.videoId;
+}
+
+/** The tallest rendition, as a number, for sorting. `qualities` is highest-first strings. */
+function height(video) {
+  return Number.parseInt(video.qualities?.[0] ?? '0', 10) || 0;
 }
 
 /**
@@ -90,33 +226,61 @@ export function createVideoLibrary(container, { onSelect }) {
  * thumbnails loaded, and anything encoded before posters existed has none to show.
  */
 function thumbnail(video) {
-  const frame = document.createElement('div');
-  frame.className = 'video-card-thumb';
+  const frame = document.createElement('span');
+  frame.className = 'video-card__thumb';
 
   const source = posterUrl(video);
-  if (!source) {
-    frame.classList.add('empty');
-    return frame;
+  if (source) {
+    const image = document.createElement('img');
+    image.src = source;
+    image.alt = ''; // Decorative: the button's aria-label already names the video.
+    image.loading = 'lazy';
+    image.decoding = 'async';
+    // A poster reaped between the listing and the paint should look like no poster, not like a
+    // broken image.
+    image.addEventListener('error', () => {
+      image.remove();
+      frame.classList.add('video-card__thumb--empty');
+    });
+    frame.appendChild(image);
+  } else {
+    frame.classList.add('video-card__thumb--empty');
   }
 
-  const image = document.createElement('img');
-  image.src = source;
-  image.alt = ''; // Decorative: the title is the next node down, so announcing it twice is noise.
-  image.loading = 'lazy';
-  // A poster reaped between the listing and the paint should look like no poster, not like a
-  // broken image.
-  image.addEventListener('error', () => {
-    image.remove();
-    frame.classList.add('empty');
-  });
-  frame.appendChild(image);
+  const play = document.createElement('span');
+  play.className = 'video-card__play';
+  const disc = document.createElement('span');
+  disc.appendChild(icon('play', ''));
+  play.appendChild(disc);
+  frame.appendChild(play);
+
+  if (video.qualities?.length > 0) {
+    const badges = document.createElement('span');
+    badges.className = 'video-card__badges';
+    const top = document.createElement('span');
+    top.className = 'badge badge--accent';
+    top.textContent = video.qualities[0];
+    badges.appendChild(top);
+    frame.appendChild(badges);
+  }
+
+  const progress = fraction(video.videoId);
+  if (progress !== null) {
+    const bar = document.createElement('span');
+    bar.className = 'video-card__resume';
+    const fill = document.createElement('span');
+    fill.style.width = `${Math.round(progress * 100)}%`;
+    bar.appendChild(fill);
+    frame.appendChild(bar);
+  }
+
   return frame;
 }
 
 function describe(video) {
   const parts = [WHEN.format(new Date(video.readyAt))];
-  if (video.qualities.length > 0) {
-    parts.push(video.qualities.join(' · '));
+  if (video.qualities.length > 1) {
+    parts.push(`${video.qualities.length} qualidades`);
   }
   parts.push(size(video.sizeBytes));
   return parts.join(' · ');
@@ -129,4 +293,43 @@ function size(bytes) {
 
 function shortId(videoId) {
   return `${videoId.slice(0, 8)}…`;
+}
+
+/** The empty-state art: a small constellation, drawn rather than shipped as an asset. */
+function constellation() {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 140 90');
+  svg.setAttribute('class', 'library-note__art');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+
+  const points = [
+    [18, 62],
+    [42, 34],
+    [68, 48],
+    [92, 20],
+    [118, 44],
+    [104, 72],
+  ];
+
+  const line = document.createElementNS(ns, 'polyline');
+  line.setAttribute('points', points.map(([x, y]) => `${x},${y}`).join(' '));
+  line.setAttribute('fill', 'none');
+  line.setAttribute('stroke', 'currentColor');
+  line.setAttribute('stroke-opacity', '0.28');
+  line.setAttribute('stroke-width', '1.2');
+  svg.appendChild(line);
+
+  points.forEach(([x, y], index) => {
+    const star = document.createElementNS(ns, 'circle');
+    star.setAttribute('cx', String(x));
+    star.setAttribute('cy', String(y));
+    star.setAttribute('r', index % 2 === 0 ? '3.2' : '2.2');
+    star.setAttribute('fill', 'currentColor');
+    star.setAttribute('opacity', index % 2 === 0 ? '0.85' : '0.5');
+    svg.appendChild(star);
+  });
+
+  return svg;
 }

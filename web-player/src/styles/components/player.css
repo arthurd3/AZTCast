@@ -1,0 +1,430 @@
+/*
+ * The player: the frame, the chrome inside it, and the watch page around it.
+ *
+ * The native controls are gone (see controls.js for why the attribute survives in the markup),
+ * so everything a viewer can press is defined here. Two rules run through all of it:
+ * every target clears --tap-target, and nothing that moves animates anything but transform
+ * and opacity.
+ */
+@layer components {
+  .player {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    border-radius: var(--radius-lg);
+    background: oklch(0% 0 0);
+    box-shadow: var(--shadow-lg);
+    /* Contains the ambient glow's blur and gives the controls something to position against. */
+    isolation: isolate;
+  }
+
+  .player video {
+    width: 100%;
+    height: 100%;
+    /* Contain, not cover: letterbox a 2.39:1 film rather than cropping its sides off. */
+    object-fit: contain;
+    background: oklch(0% 0 0);
+  }
+
+  /*
+   * The ambient spill. --ambient is written by ambientGlow.js from the frame itself and falls
+   * back to the theme violet before the first sample and on anything too dark to sample.
+   */
+  .player-stage {
+    position: relative;
+    padding: var(--space-2);
+  }
+
+  .player-stage::before {
+    content: '';
+    position: absolute;
+    inset: 6%;
+    z-index: -1;
+    border-radius: var(--radius-xl);
+    background: var(--ambient, var(--nebula));
+    filter: blur(60px);
+    opacity: 0.42;
+    /* Only opacity and the custom property change; the blur radius is constant, which is what
+       keeps this off the "animating backdrop blur" performance cliff. */
+    transition: background var(--dur-slow) linear;
+  }
+
+  /* ---- Centre play ---- */
+
+  .player__centre {
+    position: absolute;
+    inset: 0;
+    z-index: var(--z-base);
+    display: grid;
+    place-items: center;
+    background: none;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-base) var(--ease-out);
+  }
+
+  .player.is-paused .player__centre {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .player__centre-icon {
+    width: 84px;
+    height: 84px;
+    padding: 22px;
+    border-radius: var(--radius-full);
+    background: color-mix(in oklab, var(--void) 55%, transparent);
+    backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--shadow-md);
+    fill: var(--text);
+    transition: transform var(--dur-base) var(--ease-out);
+  }
+
+  .player__centre:hover .player__centre-icon {
+    transform: scale(1.06);
+  }
+
+  .player__centre:focus-visible .player__centre-icon {
+    box-shadow: var(--focus-ring);
+  }
+
+  /* ---- Buffering ---- */
+
+  .player__spinner {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    z-index: var(--z-base);
+    width: 54px;
+    height: 54px;
+    margin: -27px 0 0 -27px;
+    border: 3px solid color-mix(in oklab, var(--starlight) 18%, transparent);
+    border-top-color: var(--accent);
+    border-radius: var(--radius-full);
+    animation: spin 800ms linear infinite;
+    pointer-events: none;
+  }
+
+  /* ---- The bar ---- */
+
+  .controls {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: var(--z-controls);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-6) var(--space-4) var(--space-3);
+    /* A scrim rather than a solid bar: the picture keeps going behind the controls, which is
+       what makes a player feel like a window rather than a widget. */
+    background: linear-gradient(to top, oklch(0% 0 0 / 88%), oklch(0% 0 0 / 55%) 55%, transparent);
+    transition:
+      opacity var(--dur-base) var(--ease-out),
+      transform var(--dur-base) var(--ease-out);
+  }
+
+  .player.is-idle .controls {
+    opacity: 0;
+    transform: translateY(100%);
+    pointer-events: none;
+  }
+
+  /* The cursor goes too, or it hovers over a picture with nothing to point at. */
+  .player.is-idle {
+    cursor: none;
+  }
+
+  .controls__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  .controls__side {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  .controls__time {
+    margin-inline-start: var(--space-2);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .control-btn {
+    color: var(--text);
+    opacity: 0.92;
+  }
+
+  .control-btn:hover {
+    opacity: 1;
+    background: color-mix(in oklab, var(--starlight) 14%, transparent);
+  }
+
+  .control-btn .btn__icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  /* ---- Seek ---- */
+
+  .controls__seek {
+    padding-inline: var(--space-1);
+  }
+
+  /*
+   * The visible track is 4px; the element around it is 20px so that a pointer aimed roughly at
+   * the line still lands on it. Vertical padding, not height, so the bar does not move when it
+   * thickens on hover.
+   */
+  .seek {
+    position: relative;
+    padding-block: var(--space-2);
+    cursor: pointer;
+    touch-action: none;
+  }
+
+  .seek__track {
+    position: relative;
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: color-mix(in oklab, var(--starlight) 22%, transparent);
+    transition: height var(--dur-fast) var(--ease-out);
+  }
+
+  .seek:hover .seek__track,
+  .seek:focus-visible .seek__track,
+  .seek--dragging .seek__track {
+    height: 6px;
+  }
+
+  .seek:focus-visible {
+    outline: none;
+  }
+
+  .seek:focus-visible .seek__track {
+    box-shadow: var(--focus-ring);
+  }
+
+  /* One span per range in video.buffered — see seekBar.js on why it is not a single bar. */
+  .seek__buffered span {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: color-mix(in oklab, var(--starlight) 32%, transparent);
+    border-radius: var(--radius-full);
+  }
+
+  .seek__played {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    inset-inline-start: 0;
+    width: 0;
+    border-radius: var(--radius-full);
+    background: var(--gradient-action);
+  }
+
+  .seek__thumb {
+    position: absolute;
+    top: 50%;
+    width: 13px;
+    height: 13px;
+    margin-inline-start: -6.5px;
+    border-radius: var(--radius-full);
+    background: var(--text);
+    box-shadow: 0 0 0 1px oklch(0% 0 0 / 35%);
+    translate: 0 -50%;
+    scale: 0;
+    transition: scale var(--dur-fast) var(--ease-out);
+  }
+
+  .seek:hover .seek__thumb,
+  .seek:focus-visible .seek__thumb,
+  .seek--dragging .seek__thumb {
+    scale: 1;
+  }
+
+  .seek__tooltip {
+    position: absolute;
+    bottom: calc(100% + var(--space-1));
+    padding: 2px var(--space-2);
+    border-radius: var(--radius-xs);
+    background: color-mix(in oklab, var(--void) 88%, transparent);
+    border: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    white-space: nowrap;
+    translate: -50% 0;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-fast) var(--ease-out);
+  }
+
+  .seek--previewing .seek__tooltip {
+    opacity: 1;
+  }
+
+  /* ---- Volume ---- */
+
+  .volume {
+    display: flex;
+    align-items: center;
+  }
+
+  /*
+   * Collapsed until the group is hovered or something in it has focus. Width, not transform,
+   * because the buttons beside it must actually move over — but only on this one element, and
+   * only while a pointer is on it.
+   */
+  .volume__slider {
+    width: 0;
+    padding-block: var(--space-3);
+    overflow: hidden;
+    cursor: pointer;
+    touch-action: none;
+    transition:
+      width var(--dur-base) var(--ease-out),
+      margin var(--dur-base) var(--ease-out);
+  }
+
+  .volume:hover .volume__slider,
+  .volume:focus-within .volume__slider {
+    width: 72px;
+    margin-inline: var(--space-2);
+  }
+
+  .volume__track {
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: color-mix(in oklab, var(--starlight) 26%, transparent);
+  }
+
+  .volume__fill {
+    height: 100%;
+    border-radius: var(--radius-full);
+    background: var(--text);
+  }
+
+  .volume__slider:focus-visible .volume__track {
+    box-shadow: var(--focus-ring);
+  }
+
+  /* Touch has no hover, so a slider that only opens on hover is unreachable. Always open. */
+  @media (hover: none) {
+    .volume__slider {
+      width: 64px;
+      margin-inline: var(--space-2);
+    }
+  }
+
+  /* ---- Fullscreen ---- */
+
+  .player.is-fullscreen {
+    aspect-ratio: auto;
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+  }
+
+  /* ---- The watch page around the frame ---- */
+
+  .watch__back {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    text-decoration: none;
+  }
+
+  .watch__back:hover {
+    color: var(--accent);
+  }
+
+  .watch__back .btn__icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .watch__title {
+    margin-bottom: var(--space-4);
+    font-size: var(--text-xl);
+    /* Wraps rather than truncates: a torrent filename is long, and the whole point of showing
+       it is that the viewer can tell which video this is. */
+    overflow-wrap: anywhere;
+  }
+
+  .watch__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-5);
+    margin-top: var(--space-4);
+    padding: var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: color-mix(in oklab, var(--surface) 60%, transparent);
+    font-size: var(--text-sm);
+  }
+
+  .watch__meta div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .watch__meta dt,
+  .watch__meta-label {
+    color: var(--text-dim);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+  }
+
+  .watch__status {
+    margin-top: var(--space-4);
+  }
+
+  /* The resume offer. An offer, not an automatic seek — see progressStore.js. */
+  .resume {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid color-mix(in oklab, var(--accent) 35%, transparent);
+    border-radius: var(--radius-sm);
+    background: var(--accent-quiet);
+    font-size: var(--text-sm);
+  }
+
+  .resume__text {
+    flex: 1 1 16rem;
+  }
+
+  .watch__rail {
+    margin-top: var(--space-8);
+  }
+
+  @media (max-width: 40rem) {
+    .controls {
+      padding-inline: var(--space-2);
+    }
+
+    /* Two of the five left-hand buttons go: the gestures cover them (double-tap seeks) and
+       five 44px targets do not fit beside the time on a 360px screen. */
+    .controls__side .control-btn[aria-label^='Voltar 10'],
+    .controls__side .control-btn[aria-label^='Avançar 10'] {
+      display: none;
+    }
+  }
+}
