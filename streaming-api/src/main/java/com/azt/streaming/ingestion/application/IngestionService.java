@@ -6,6 +6,7 @@ import com.azt.streaming.ingestion.domain.StreamJob;
 import com.azt.streaming.ingestion.domain.StreamJobNotFoundException;
 import com.azt.streaming.ingestion.domain.StreamJobRepository;
 import com.azt.streaming.shared.storage.MediaStorage;
+import com.azt.streaming.shared.storage.VideoCatalog;
 import com.azt.streaming.transcoding.domain.MediaTranscoder;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -22,6 +23,7 @@ import org.springframework.stereotype.Service;
 public class IngestionService {
 
     private final MediaStorage mediaStorage;
+    private final VideoCatalog videoCatalog;
     private final TorrentDownloader torrentDownloader;
     private final MediaTranscoder mediaTranscoder;
     private final StreamJobRepository jobRepository;
@@ -40,6 +42,7 @@ public class IngestionService {
 
     public IngestionService(
             MediaStorage mediaStorage,
+            VideoCatalog videoCatalog,
             TorrentDownloader torrentDownloader,
             MediaTranscoder mediaTranscoder,
             StreamJobRepository jobRepository,
@@ -47,6 +50,7 @@ public class IngestionService {
             MeterRegistry meterRegistry,
             Clock clock) {
         this.mediaStorage = mediaStorage;
+        this.videoCatalog = videoCatalog;
         this.torrentDownloader = torrentDownloader;
         this.mediaTranscoder = mediaTranscoder;
         this.jobRepository = jobRepository;
@@ -99,6 +103,11 @@ public class IngestionService {
                         videoFile -> {
                             log.info("Ingestion {} downloaded to {}, transcoding", videoId, videoFile);
                             jobRepository.save(job.transcoding(clock.instant()));
+                            // The downloaded filename is the only human-readable name this pipeline
+                            // ever sees, and it is gone once the reaper takes the download directory.
+                            // Recorded here, before the transcode, so the sidecar is already in place
+                            // when master.m3u8 lands and the video becomes listable.
+                            videoCatalog.record(videoId, videoFile.getFileName().toString());
                             return mediaTranscoder.transcodeToHls(videoFile, videoId);
                         })
                 .whenComplete(

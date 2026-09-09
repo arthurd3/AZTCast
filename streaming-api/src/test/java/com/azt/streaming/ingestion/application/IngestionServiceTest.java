@@ -13,6 +13,7 @@ import com.azt.streaming.ingestion.domain.StreamJob;
 import com.azt.streaming.ingestion.domain.StreamJobNotFoundException;
 import com.azt.streaming.ingestion.domain.StreamJobStatus;
 import com.azt.streaming.shared.storage.MediaStorage;
+import com.azt.streaming.shared.storage.VideoCatalog;
 import com.azt.streaming.transcoding.domain.MediaTranscoder;
 import com.azt.streaming.transcoding.domain.TranscodingException;
 import java.nio.file.Path;
@@ -35,6 +36,7 @@ class IngestionServiceTest {
     private static final Path VIDEO_FILE = Path.of("/downloads/x/movie.mkv");
 
     @Mock private MediaStorage mediaStorage;
+    @Mock private VideoCatalog videoCatalog;
     @Mock private TorrentDownloader torrentDownloader;
     @Mock private MediaTranscoder mediaTranscoder;
 
@@ -63,6 +65,7 @@ class IngestionServiceTest {
         service =
                 new IngestionService(
                         mediaStorage,
+                        videoCatalog,
                         torrentDownloader,
                         mediaTranscoder,
                         jobRepository,
@@ -101,6 +104,19 @@ class IngestionServiceTest {
 
         transcode.complete(null);
         assertThat(status(videoId)).isEqualTo(StreamJobStatus.READY);
+    }
+
+    @Test
+    void recordsTheDownloadedFilenameAsTheTitle() {
+        // The only human-readable name this pipeline ever sees, and it is gone once the reaper takes
+        // the download directory — so it has to be captured while the path is still in hand.
+        given(torrentDownloader.download(any(), any()))
+                .willReturn(CompletableFuture.completedFuture(VIDEO_FILE));
+        given(mediaTranscoder.transcodeToHls(any(), any())).willReturn(new CompletableFuture<>());
+
+        String videoId = service.startIngestion(MAGNET).videoId();
+
+        Mockito.verify(videoCatalog).record(videoId, "movie.mkv");
     }
 
     @Test

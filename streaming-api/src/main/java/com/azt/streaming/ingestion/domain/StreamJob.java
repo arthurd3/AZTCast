@@ -48,6 +48,17 @@ public record StreamJob(
 
     /** Path to the master playlist, or null while it does not exist yet. */
     public String streamUrl() {
-        return status == StreamJobStatus.READY ? "/api/v1/stream/" + videoId + "/master.m3u8" : null;
+        return status == StreamJobStatus.READY ? streamUrlFor(videoId) : null;
+    }
+
+    /**
+     * Path to {@code videoId}'s master playlist, whether or not a job for it still exists.
+     *
+     * <p>Static, so the catalogue can name a video whose job record expired long ago. Also static so
+     * Jackson ignores it: an instance method shaped like a getter would become a seventh property and
+     * break deserialisation, which is the same trap {@link #inFlight()} is named around.
+     */
+    public static String streamUrlFor(String videoId) {
+        return "/api/v1/stream/" + videoId + "/master.m3u8";
     }
 }

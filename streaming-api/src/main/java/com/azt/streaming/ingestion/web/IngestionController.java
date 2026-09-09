@@ -4,8 +4,12 @@ import com.azt.streaming.ingestion.application.IngestionService;
 import com.azt.streaming.ingestion.domain.StreamJob;
 import com.azt.streaming.ingestion.web.dto.CreateStreamJobRequest;
 import com.azt.streaming.ingestion.web.dto.StreamJobResponse;
+import com.azt.streaming.ingestion.web.dto.VideoSummaryResponse;
+import com.azt.streaming.shared.storage.VideoCatalog;
 import jakarta.validation.Valid;
 import java.net.URI;
+import java.util.List;
+import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,15 +18,17 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Starts ingestions and reports their progress. */
+/** Starts ingestions, reports their progress, and lists what finished. */
 @RestController
 @RequestMapping("/api/v1/videos")
 public class IngestionController {
 
     private final IngestionService ingestionService;
+    private final VideoCatalog videoCatalog;
 
-    public IngestionController(IngestionService ingestionService) {
+    public IngestionController(IngestionService ingestionService, VideoCatalog videoCatalog) {
         this.ingestionService = ingestionService;
+        this.videoCatalog = videoCatalog;
     }
 
     @PostMapping
@@ -32,6 +38,25 @@ public class IngestionController {
         return ResponseEntity.accepted()
                 .location(URI.create("/api/v1/videos/" + job.videoId()))
                 .body(StreamJobResponse.from(job));
+    }
+
+    /**
+     * Everything that can be watched, newest first.
+     *
+     * <p>Read from disk rather than from job state, because the two disagree: job records are
+     * per-process without Redis and expire under a TTL with it, while the media outlives both. A
+     * catalogue built on jobs would go empty after a restart with videos still sitting in the HLS
+     * root, which is exactly the case this endpoint exists to serve.
+     *
+     * <p>{@code no-store} for the same reason the not-found playlist carries it: the list changes the
+     * moment an ingestion finishes, and a cached copy would keep telling a viewer their video is not
+     * there yet.
+     */
+    @GetMapping
+    public ResponseEntity<List<VideoSummaryResponse>> listVideos() {
+        List<VideoSummaryResponse> videos =
+                videoCatalog.list().stream().map(VideoSummaryResponse::from).toList();
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(videos);
     }
 
     /**
