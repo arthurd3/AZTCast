@@ -21,6 +21,8 @@
         <bt.version>1.10</bt.version>
         <springdoc.version>2.8.6</springdoc.version>
         <archunit.version>1.4.1</archunit.version>
+        <sqlite.version>3.49.1.0</sqlite.version>
+        <geoip2.version>5.2.0</geoip2.version>
     </properties>
 
     <dependencies>
@@ -75,6 +77,29 @@
             <groupId>com.github.atomashpolskiy</groupId>
             <artifactId>bt-dht</artifactId>
             <version>${bt.version}</version>
+        </dependency>
+
+        <!-- The provider log: who served each torrent.
+             SQLite rather than a server: this is a durable, queryable record that has to
+             outlive both the Redis TTL and the media retention window, and it is one file
+             on the same disk the media already lives on (ADR-0003). No container to run,
+             nothing to operate. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.xerial</groupId>
+            <artifactId>sqlite-jdbc</artifactId>
+            <version>${sqlite.version}</version>
+        </dependency>
+
+        <!-- Turns a peer's IP into a country, city and network operator, from a local
+             .mmdb file. Reader only: no lookup ever leaves this process. -->
+        <dependency>
+            <groupId>com.maxmind.geoip2</groupId>
+            <artifactId>geoip2</artifactId>
+            <version>${geoip2.version}</version>
         </dependency>
 
         <!-- Tooling -->
