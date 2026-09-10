@@ -45,18 +45,28 @@ export function renderPeerTable(peers, { maxRows = MAX_ROWS } = {}) {
 
   const element = document.createElement('table');
   element.className = 'peers__table';
+  // Explicit, and not redundant. Below 60rem peers.css lays every one of these out as a block
+  // so each row can become a labelled card, and a table element laid out as a block loses the
+  // implicit role its tag would otherwise carry — a screen reader stops seeing rows and cells
+  // and starts seeing loose text. These say the roles out loud so the narrow layout keeps the
+  // semantics the wide one gets for free.
+  element.setAttribute('role', 'table');
 
   const head = document.createElement('thead');
+  head.setAttribute('role', 'rowgroup');
   const headRow = document.createElement('tr');
+  headRow.setAttribute('role', 'row');
   COLUMNS.forEach((label) => {
     const cell = document.createElement('th');
     cell.scope = 'col';
+    cell.setAttribute('role', 'columnheader');
     cell.textContent = label;
     headRow.appendChild(cell);
   });
   head.appendChild(headRow);
 
   const body = document.createElement('tbody');
+  body.setAttribute('role', 'rowgroup');
   [...peers]
     .sort(
       (left, right) =>
@@ -82,6 +92,7 @@ export function peerSummaryText(peers) {
 
 function row(peer) {
   const element = document.createElement('tr');
+  element.setAttribute('role', 'row');
   if (peer.timesConnected > 0) {
     element.className = 'peers__row--connected';
   }
@@ -100,12 +111,18 @@ function row(peer) {
     cell(relativeTime(peer.lastSeen)),
   ];
 
-  cells.forEach((node) => element.appendChild(node));
+  // Same order as COLUMNS by construction. The label rides along on the cell because the card
+  // layout has no header row to read it from — peers.css prints it from ::before.
+  cells.forEach((node, index) => {
+    node.dataset.label = COLUMNS[index];
+    element.appendChild(node);
+  });
   return element;
 }
 
 function cell(text, className, ...extras) {
   const node = document.createElement('td');
+  node.setAttribute('role', 'cell');
   if (className) {
     node.className = className;
   }

@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0d16" />
+    <!-- Paints the UA chrome dark before the stylesheet lands, so the first frame is
+         not a light scrollbar on a page that is about to go black. -->
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>AZTCast — Como sabemos</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Pular para o conteúdo</a>
+
+    <div class="shell">
+      <header class="site-header">
+        <a class="brand" href="/index.html">
+          <img class="brand__mark" src="/brand.svg" width="32" height="32" alt="" />
+          <span>AZTCast<span class="brand__sub"> · localização</span></span>
+        </a>
+      </header>
+
+      <main id="main">
+        <p class="eyebrow">Privacidade</p>
+        <h1>O que um endereço IP revela</h1>
+
+        <div class="prose">
+          <p>
+            A página de fornecedores faz três afirmações: que as posições são regiões aproximadas e
+            nunca endereços, que nenhuma consulta sai desta máquina, e que o endereço no cartão é o
+            que os pares reportaram ver. Não havia onde ler por que qualquer uma delas é verdadeira.
+            É o que está escrito abaixo.
+          </p>
+
+          <h2>Como sabemos o endereço que os pares te veem</h2>
+          <p>
+            Não descobrimos: alguém nos conta. O protocolo BitTorrent tem uma extensão de handshake
+            (<a
+              href="https://www.bittorrent.org/beps/bep_0010.html"
+              target="_blank"
+              rel="noreferrer noopener"
+              >BEP-10</a
+            >) em que cada lado pode enviar ao outro um campo <code>yourip</code> — quatro bytes
+            para IPv4, dezesseis para IPv6 — dizendo qual endereço de origem viu chegar. Um par
+            remoto olha para a conexão que abriste e devolve o que enxergou.
+          </p>
+          <p>
+            Isso torna o valor diferente de tudo o mais nesta aplicação. Uma configuração diz o que
+            <em>deveria</em> acontecer com o tráfego de saída; este campo diz o que de fato
+            aconteceu, visto de fora. É a única prova direta de que um túnel está funcionando.
+            Também é por isso que o cartão às vezes não existe: até que algum par envie um
+            <code>yourip</code>, não há nada a mostrar, e não inventamos um.
+          </p>
+          <p>
+            O cartão começa mascarado. O valor não é segredo — todo par do enxame já o tem, e é
+            justamente esse o argumento de fundo desta página. Mas esta é a página que alguém abre
+            para conferir se o túnel está funcionando, o que a torna a mais provável de estar na
+            tela durante um compartilhamento ou numa captura. Mostrá-lo sem que ninguém tenha pedido
+            nunca foi uma decisão de ninguém.
+          </p>
+          <p class="prose__caveat">
+            A máscara é cosmética. Ela protege a captura de tela, não o fio: os pares continuam
+            vendo teu endereço exatamente como antes. Esconder de verdade é trabalho da rede, não da
+            aplicação — a última seção explica.
+          </p>
+
+          <h2>Como conhecemos o endereço de cada par</h2>
+          <p>
+            Nenhuma dessas formas é uma consulta a terceiros. Num enxame público, endereços circulam
+            porque o protocolo precisa deles para funcionar:
+          </p>
+          <ul>
+            <li>
+              <strong>O announce ao tracker.</strong> Perguntar quem tem o arquivo devolve uma lista
+              de pares (endereço, porta).
+            </li>
+            <li>
+              <strong>A DHT.</strong> Uma chamada <code>get_peers</code> na tabela distribuída
+              devolve a mesma coisa, sem tracker nenhum no meio.
+            </li>
+            <li>
+              <strong>PEX.</strong> Pares já conectados trocam entre si listas dos pares que
+              conhecem.
+            </li>
+            <li>
+              <strong>A própria conexão TCP.</strong> Quem se conecta a esta máquina chega com um
+              endereço de origem; o sistema operacional o entrega, e é o que registramos.
+            </li>
+          </ul>
+          <p>
+            Um endereço e uma porta é todo o teto do que o BitTorrent revela. Não há nome, não há
+            conta, não há contato — o protocolo não tem esses conceitos. O que vem depois,
+            transformar esse número num lugar no mapa, é uma estimativa feita por fora, e é onde a
+            precisão começa a escorrer.
+          </p>
+
+          <h2>O que um bloco de IPs é — e o que não é</h2>
+          <p>
+            Cinco organizações regionais distribuem o espaço de endereçamento do mundo: ARIN na
+            América do Norte, RIPE NCC na Europa e Oriente Médio, APNIC na Ásia-Pacífico, LACNIC na
+            América Latina e AFRINIC na África. Quando uma operadora recebe um bloco, o registro
+            fica público no WHOIS: quem levou, e onde essa entidade está registrada.
+          </p>
+          <p>
+            É aqui que quase toda leitura erra. O endereço no registro é o
+            <em>endereço corporativo de quem detém o bloco</em>, não o de quem usa. Uma operadora
+            nacional registrada em São Paulo atende o país inteiro a partir daquele mesmo registro.
+            Um bloco anunciado numa cidade pode estar terminando em outra, a mil quilômetros. O
+            registro diz de quem é o bloco; ele nunca prometeu dizer onde está a pessoa.
+          </p>
+
+          <h2>Como as bases de geolocalização são construídas</h2>
+          <p>
+            Um provedor de dados de geolocalização cruza várias fontes, nenhuma delas definitiva:
+          </p>
+          <ul>
+            <li>As alocações dos registros regionais e o que o WHOIS declara sobre elas.</li>
+            <li>
+              Tabelas de rotas BGP — por onde o bloco é anunciado, e quem o anuncia, sugere onde ele
+              termina.
+            </li>
+            <li>
+              Nomes de DNS reverso, que muitas operadoras carimbam com códigos de cidade ou região.
+            </li>
+            <li>
+              Sondagem de latência e triangulação por traceroute: a luz percorre cerca de 200 km por
+              milissegundo em fibra, então um tempo de ida e volta impõe um teto à distância.
+            </li>
+            <li>Dados submetidos por operadoras, por serviços e por usuários.</li>
+          </ul>
+          <p>
+            A triangulação por latência é a mais atraente das cinco e a mais ruidosa.
+            Congestionamento infla o tempo; rotas assimétricas fazem a ida e a volta seguirem
+            caminhos diferentes; desvios por política de roteamento mandam o pacote a um continente
+            que ele não precisava visitar. Cada um desses distorce a distância estimada, e o erro
+            cresce com ela.
+          </p>
+
+          <h2>O raio de precisão, e por que o mapa desenha círculos</h2>
+          <p>
+            Uma base como a GeoLite2 guarda, para cada bloco, uma latitude, uma longitude e — o
+            campo que quase todo mundo ignora — um <strong>raio de precisão</strong> em quilômetros,
+            que vai de poucos até mil. A coordenada sozinha não é uma afirmação; a afirmação é o
+            círculo. As coordenadas, aliás, costumam cair no centroide populacional de uma cidade, e
+            não em prédio nenhum: é por isso que muitos endereços distintos resolvem para o
+            <em>mesmo</em> ponto.
+          </p>
+          <ul class="prose__figures">
+            <li>
+              <span class="prose__figure">~98%</span>
+              <span class="prose__figure-label">certo no nível do país</span>
+            </li>
+            <li>
+              <span class="prose__figure">~80%</span>
+              <span class="prose__figure-label">no nível do estado (EUA)</span>
+            </li>
+            <li>
+              <span class="prose__figure">~66%</span>
+              <span class="prose__figure-label">cidade, dentro de 50 km</span>
+            </li>
+            <li>
+              <span class="prose__figure">~123 mil</span>
+              <span class="prose__figure-label">cidades na base inteira</span>
+            </li>
+          </ul>
+          <p>
+            Os números acima são de um fornecedor, num momento, e vão mudar — estão aqui com a fonte
+            ao lado para que a próxima pessoa possa reconferir em vez de refazer a conta. O que não
+            muda é a forma do erro: bom no país, razoável no estado, fraco na cidade, inútil no
+            quarteirão. É por isso que o mapa desta aplicação desenha círculos e recusa aproximação
+            além de certo ponto, e por que a tabela mostra cidade e país mas nunca uma rua.
+          </p>
+          <p class="prose__caveat">
+            Nem toda base traz o raio. A DB-IP Lite, que é o padrão sugerido aqui, não fornece esse
+            campo; a GeoLite2 City fornece. Quando o raio falta, o mapa não tem como desenhar o
+            círculo honesto — e a legenda passa a hedge por isso, não por cautela decorativa.
+          </p>
+
+          <h2>O que este aplicativo não faz</h2>
+          <p>
+            A localização acontece inteiramente dentro deste processo, contra um arquivo
+            <code>.mmdb</code> no disco, lido pela biblioteca GeoIP2 com um cache em memória. Cidade
+            e ASN são dois arquivos separados. <strong>Nenhuma consulta sai daqui.</strong>
+          </p>
+          <p>
+            Isso não é economia de rede, é a regra central: resolver endereços de pares contra um
+            serviço web entregaria a um terceiro a lista de todos de quem esta máquina baixou. Seria
+            um vazamento pior do que o problema que a localização se propõe a resolver. Pelo mesmo
+            motivo o mapa não usa servidor de tiles — cada pan e cada zoom seria um pedido contando
+            a alguém que parte do mundo esta máquina está olhando.
+          </p>
+          <ul>
+            <li>
+              O registro de fornecedores vem <strong>desligado</strong> por padrão, e os dois
+              caminhos de banco de dados vêm vazios.
+            </li>
+            <li>
+              A classificação "datacenter/VPN" é uma heurística offline sobre número de ASN e nome
+              da organização. É derivada na leitura e nunca gravada.
+            </li>
+            <li>
+              As linhas expiram por retenção depois de trinta dias. Um endereço IP é dado pessoal
+              sob a LGPD, e guardá-lo indefinidamente seria uma decisão que ninguém tomou.
+            </li>
+          </ul>
+
+          <h2>Como mudar o que os pares veem</h2>
+          <p>
+            Esta aplicação não consegue se mascarar sozinha, e não é por falta de tentativa. A
+            biblioteca BitTorrent abre <em>sockets</em> NIO crus, que ignoram as propriedades de
+            proxy da JVM; e a DHT é UDP, que passaria ao largo de um proxy HTTP silenciosamente — o
+            pior modo de falha possível, porque pareceria estar funcionando.
+          </p>
+          <p>
+            Mascarar é, portanto, trabalho da camada de rede: um sidecar de VPN por onde todo o
+            tráfego do contêiner sai, com kill switch que fecha em vez de vazar quando o túnel cai,
+            e o endereço de aceitação apontado para o túnel. O repositório traz essa composição
+            pronta.
+          </p>
+          <p class="prose__caveat">
+            E a frase que precisa aparecer sempre que o assunto surge:
+            <strong>isso não é anonimato</strong>. Um túnel troca quem vê teu tráfego, não elimina o
+            observador. O provedor da VPN vê o que a operadora via. O cartão "como os pares te veem"
+            é como se confere que a troca aconteceu — não é um certificado de invisibilidade.
+          </p>
+          <p>
+            A decisão e seus limites estão registrados no repositório: ADR-0014 (o registro de
+            fornecedores em SQLite), ADR-0015 (mascarar pertence à rede), ADR-0016 (o mapa é
+            desenhado offline), ADR-0017 (a projeção e os sinais derivados) e ADR-0029 (o endereço
+            começa oculto), em <code>docs/decisions/</code>. O contrato dos campos está em
+            <code>docs/api.md</code>.
+          </p>
+
+          <h2>Onde ler mais</h2>
+          <ul class="prose__sources">
+            <li>
+              <a
+                href="https://www.bittorrent.org/beps/bep_0010.html"
+                target="_blank"
+                rel="noreferrer noopener"
+                >BEP-10 — Extension Protocol</a
+              >, onde o campo <code>yourip</code> é definido.
+            </li>
+            <li>
+              <a
+                href="https://www.bittorrent.org/beps/bep_0005.html"
+                target="_blank"
+                rel="noreferrer noopener"
+                >BEP-5 — DHT Protocol</a
+              >, e a chamada <code>get_peers</code>.
+            </li>
+            <li>
+              <a
+                href="https://support.maxmind.com/knowledge-base/articles/maxmind-geolocation-accuracy"
+                target="_blank"
+                rel="noreferrer noopener"
+                >MaxMind — Geolocation accuracy</a
+              >, de onde vêm os números e o raio de precisão.
+            </li>
+            <li>
+              <a
+                href="https://dev.maxmind.com/geoip/geolite2-free-geolocation-data/"
+                target="_blank"
+                rel="noreferrer noopener"
+                >MaxMind — GeoLite2 Free Geolocation Data</a
+              >, o formato e o que cada arquivo contém.
+            </li>
+            <li>
+              <a href="https://arxiv.org/pdf/2107.03988" target="_blank" rel="noreferrer noopener"
+                >Longitudinal Study of an IP Geolocation Database</a
+              >, sobre como esses dados envelhecem.
+            </li>
+            <li>
+              <a href="https://arxiv.org/pdf/2006.16895" target="_blank" rel="noreferrer noopener"
+                >Dragoon: Advanced Modelling of IP Geolocation by use of Latency Measurements</a
+              >, sobre triangulação por latência e seu ruído.
+            </li>
+            <li>
+              <a href="https://arxiv.org/pdf/1109.4039" target="_blank" rel="noreferrer noopener"
+                >Exploiting P2P Communications to Invade Users' Privacy</a
+              >, sobre o que um enxame público revela na prática.
+            </li>
+          </ul>
+        </div>
+      </main>
+
+      <footer class="site-footer">
+        <span>AZTCast · streaming HLS adaptativo</span>
+        <a href="/providers.html">Fornecedores</a>
+        <a href="/index.html">Voltar à biblioteca</a>
+      </footer>
+    </div>
+
+    <script type="module" src="/src/localizacao.js"></script>
+  </body>
+</html>

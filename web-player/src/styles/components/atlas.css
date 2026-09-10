@@ -68,6 +68,57 @@
     word-break: break-all;
   }
 
+  /* Value and its toggle on one line, with the value taking the slack so the eye sits at the end. */
+  .atlas__self {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .atlas__self .atlas__stat-value {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /*
+   * 44x44 of hit area inside a line about 24px tall. The negative block margin pulls the *margin*
+   * box back to the line while the border box — which is what a pointer is measured against —
+   * stays at the tap-target floor. Without it the tile grows, and grid's default align-items:
+   * stretch drags every other tile in the same row up with it. Not .btn--sm: that is 44x32 and
+   * misses the 44x44 floor.
+   */
+  .atlas__self-toggle {
+    flex: none;
+    margin-block: -0.625rem;
+    color: var(--accent);
+  }
+
+  /*
+   * Masked reads as withheld on purpose rather than as a value. Unselectable because twelve
+   * bullets on the clipboard would look like a copied address.
+   */
+  .atlas__stat--self .atlas__stat-value.is-masked {
+    color: color-mix(in oklab, var(--accent) 60%, var(--text));
+    letter-spacing: 0.15em;
+    user-select: none;
+  }
+
+  /*
+   * Lifted off pure --accent because this is --text-xs on the tile's accent tint, not on
+   * --surface: measured, the raw accent lands at 4.19:1 there and small text needs 4.5. The
+   * mix keeps it reading as accent at 5.0:1. The underline carries the affordance either way.
+   */
+  .atlas__stat-link {
+    font-size: var(--text-xs);
+    color: color-mix(in oklab, var(--accent) 70%, var(--text));
+    text-underline-offset: 0.2em;
+  }
+
+  .atlas__stat-link:hover {
+    color: var(--text);
+  }
+
   /* ---- The map ---- */
 
   .atlas {
@@ -258,7 +309,10 @@
   }
 
   /* Protocol flags: present on nearly every peer, so they whisper rather than announce. */
+  /* On its own line under the client name: inline, this run of flags was ~90px of the widest
+     column, and it was setting that column's width by itself. */
   .peer-caps {
+    display: block;
     font-family: var(--font-mono);
     font-size: 0.625rem;
     color: var(--text-dim);
@@ -284,7 +338,13 @@
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-md);
     background: var(--glass-bg);
-    overflow: hidden;
+    /*
+     * clip, not hidden. Both crop the content to the radius, which is all this ever wanted,
+     * but `hidden` also makes the card a scroll container — and the peers table's sticky
+     * header then sticks to this box instead of to the page, which is to say it does not
+     * stick at all. `clip` creates no scroll container. Do not "simplify" it back.
+     */
+    overflow: clip;
   }
 
   .provenance__head {
@@ -358,6 +418,10 @@
 
   .provenance__peers {
     padding: 0 var(--space-3) var(--space-4);
+    /* The query container peers.css sizes its table against. The same table also renders in
+       the library's .peers panel, which is ~90px narrower at every viewport — the viewport
+       cannot tell the two apart, and near the breakpoint that 90px is what decides. */
+    container: peers / inline-size;
   }
 
   /* An expanded row is the one being read, and the one the map is filtered to. */

@@ -40,7 +40,11 @@ const library = createVideoLibrary(document.getElementById('library'), {
     label: 'Enviar o primeiro torrent',
     onClick: () => {
       magnetInput.focus();
-      magnetInput.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      // The reduced-motion check has to happen here. reset.css sets `scroll-behavior: auto`
+      // under that query, but a behavior passed to scrollIntoView is an argument, not a style,
+      // and the stylesheet never sees it.
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      magnetInput.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
     },
   },
   onLoad: ({ total: loaded, shown, failed }) => {

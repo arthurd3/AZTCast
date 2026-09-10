@@ -193,13 +193,14 @@ export function createWorldMap(container, { onSelect } = {}) {
    * Re-fit when the box changes shape.
    *
    * Leaflet measures its container once, at construction. This one is built at module load, so
-   * every later resize — a window drag, an orientation change, a scrollbar appearing — left the map
-   * sized for a box that no longer existed until the page was reloaded. cosmos.js watches its own
-   * canvas the same way.
+   * every later resize — a window drag, an orientation change, a page zoom — left the map sized
+   * for a box that no longer existed until the page was reloaded. cosmos.js watches its own
+   * canvas the same way. (An appearing scrollbar used to belong on that list; base.css reserves
+   * the gutter now, so the width no longer moves when one arrives.)
    *
    * Only a reader who has not zoomed gets re-fitted. Doing it unconditionally was harmless while
    * nothing but the +/- control could zoom; now that the wheel can, it would throw a chosen zoom
-   * away on every scrollbar that appears — and expanding a video below the map makes one appear.
+   * away on every re-fit.
    */
   const resizeObserver = new ResizeObserver(() => {
     // Read first: invalidateSize changes the answer.

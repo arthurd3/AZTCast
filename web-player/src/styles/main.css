@@ -28,6 +28,7 @@
 @import './components/menu.css';
 @import './components/player.css';
 @import './components/console.css';
+@import './components/prose.css';
 
 /* Last, and it must stay last — see the note in utilities.css. */
 @import './utilities.css';

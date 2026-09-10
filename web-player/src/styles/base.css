@@ -3,6 +3,17 @@
  * primitives every page shares (shell, header, footer, skip link).
  */
 @layer base {
+  /*
+   * The gutter is reserved whether or not anything overflows. Three modules used to work
+   * around the shift a scrollbar caused when it appeared — ui/cosmos.js sizes its canvas off
+   * the containing block, ui/worldMap.js re-fits Leaflet — and reserving the space up front
+   * means the width simply never changes.
+   */
+  :root {
+    scrollbar-gutter: stable;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+
   body {
     min-height: 100vh;
     margin: 0;

@@ -56,6 +56,18 @@
     --focus: var(--stellar);
     --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus);
 
+    /* ---- Semantic: scrollbars.
+       The percentages are measured, not picked. 48% of --starlight clears 4.5:1 against all
+       four grounds anything scrolls over here — the page, --surface, --surface-raised and the
+       black behind the video — which is the recommended floor for a thumb against its track.
+       Lower mixes look right and are not: 26% reads as a tasteful grey and measures 2.05:1,
+       under even the 3:1 that WCAG 1.4.11 asks of a non-text control.
+       The track is transparent on purpose. With no band drawn there is no track/page edge to
+       contrast, and the thumb is then measured straight against whatever it sits on. ---- */
+    --scrollbar-thumb: color-mix(in oklab, var(--starlight) 48%, transparent);
+    --scrollbar-thumb-hover: color-mix(in oklab, var(--starlight) 66%, transparent);
+    --scrollbar-track: transparent;
+
     /* ---- Semantic: states.
        Amber/green/red re-cut inside the palette, so a banner still looks like it belongs to
        this app. Each is a light foreground meant to sit on its own --*-quiet tint. ---- */
@@ -188,6 +200,8 @@
       --text-muted: var(--starlight);
       --text-dim: var(--dust);
       --glass-bg: var(--surface);
+      --scrollbar-thumb: color-mix(in oklab, var(--starlight) 80%, transparent);
+      --scrollbar-thumb-hover: var(--starlight);
     }
   }
 }

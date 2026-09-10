@@ -119,7 +119,8 @@ export function createCosmos(canvas) {
   resize();
 
   // ResizeObserver rather than the resize event: it also fires when the canvas changes size
-  // without the window doing so, which is what happens when a scrollbar appears.
+  // without the window doing so — an orientation change, or a zoom that re-lays out the page.
+  // The scrollbar that used to do it no longer can; base.css reserves its gutter up front.
   const resizeObserver = new ResizeObserver(() => {
     resize();
     if (reduceMotion.matches) {

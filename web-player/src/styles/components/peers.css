@@ -4,9 +4,24 @@
  * Deliberately quiet. It sits under the progress track during a download and is the only part
  * of the page that is purely informational — nothing here is clickable and nothing acts on it,
  * so it reads at the weight of a caption rather than competing with the track above it.
+ *
+ * The one rule that shapes everything below: this table never scrolls sideways. Nine columns
+ * of peer data used to overflow its container by ~115px, and the scrollbar that would have
+ * revealed the last two sat at the foot of a 3,700px table — present, and in practice
+ * unreachable. So the columns are given shares of the width that add to 100, and below 60rem,
+ * where nine columns genuinely cannot fit any screen, each row becomes a labelled card.
  */
 @layer components {
   .peers {
+    /*
+     * Queried by size, not the viewport. This same table renders in two panels of different
+     * widths — 1414px inside a provenance card at a 1920px viewport, 1324px inside this one —
+     * and a media query cannot tell them apart. `inline-size` computes to
+     * `contain: layout style inline-size`, which does not create a scroll container, so the
+     * sticky header below is unaffected. `container-type: size` would be wrong: block-axis
+     * containment would collapse the panel to nothing.
+     */
+    container: peers / inline-size;
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
@@ -32,36 +47,107 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Six columns of addresses do not fit a phone, and the page must not scroll sideways
-     because of them. The table scrolls inside this instead. */
+  /*
+   * Kept as a plain wrapper — it no longer scrolls. Its `overflow-x: auto` was also what
+   * broke the sticky header below: a non-visible overflow on one axis makes the other compute
+   * to `auto`, so this div was the nearest scroll container and the header dutifully stuck to
+   * a box that never scrolls vertically.
+   */
   .peers__scroll {
-    overflow-x: auto;
     margin-top: var(--space-2);
   }
 
   .peers__table {
+    /* Fixed, so the declared shares govern instead of the longest cell in each column. */
+    table-layout: fixed;
     width: 100%;
-    border-collapse: collapse;
+    /* Separate with no spacing, not collapse: a collapsed border belongs to the table rather
+       than to the cell, and scrolls out from under a sticky header. */
+    border-collapse: separate;
+    border-spacing: 0;
     font-size: var(--text-xs);
-    white-space: nowrap;
+  }
+
+  /*
+   * Two width budgets, not one.
+   *
+   * Five columns hold a short string that must not break — a byte count, a clock, or in three
+   * cases the header word itself, which is wider than any value beneath it. Those get exact
+   * widths, in rem, measured from what they actually render. The four columns holding prose
+   * are left `auto`, and the fixed-layout algorithm splits whatever remains between them
+   * equally: 247px each in a 1414px panel, which clears every one of their longest values.
+   *
+   * The exact widths are the point. Give all nine a share of the width instead and they shrink
+   * together, and the short ones fall under their own content — measured, `Conectado` starts
+   * clipping at a 966px container and `Visto` is a pixel from it. With the horizontal
+   * scrollbar gone there is nothing to scroll to that overflow; .provenance simply clips it
+   * away. A rem cannot shrink, so that failure is unreachable rather than merely unlikely.
+   *
+   * Floors measured from the rendered content, plus the 12px --space-3 gutter:
+   *   Estado 85 · Baixado 135 · Enviado 59 · Conectado 75 · Visto 42
+   *
+   * Do not try to weight the four prose columns with `calc((100% - 26.5rem) * 0.28)` and
+   * friends. It reads well and it does not work: a table column width mixing a percentage with
+   * a length is not honoured under `table-layout: fixed`, and every such column silently falls
+   * back to the equal share it would have had anyway. Verified in Chrome — three columns asked
+   * for 50/30/20 of the remainder and each got a third of it.
+   */
+  .peers__table th:nth-child(5) {
+    width: 5.5rem; /* Estado */
+  }
+
+  .peers__table th:nth-child(6) {
+    width: 9rem; /* Baixado */
+  }
+
+  .peers__table th:nth-child(7) {
+    width: 4rem; /* Enviado */
+  }
+
+  .peers__table th:nth-child(8) {
+    width: 5rem; /* Conectado */
+  }
+
+  .peers__table th:nth-child(9) {
+    width: 3rem; /* Visto */
   }
 
   .peers__table th {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
     padding: var(--space-2) var(--space-3) var(--space-2) 0;
-    border-bottom: 1px solid var(--border);
+    /* Opaque, or the rows show through it as they pass underneath. */
+    background: var(--surface);
+    /* Inset shadow rather than border-bottom: see border-collapse above. */
+    box-shadow: inset 0 -1px 0 var(--border);
     text-align: left;
     font-weight: 600;
+    white-space: nowrap;
     color: var(--text-muted);
   }
 
   .peers__table td {
-    padding: var(--space-2) var(--space-3) var(--space-2) 0;
+    padding: var(--space-1) var(--space-3) var(--space-1) 0;
     border-bottom: 1px solid color-mix(in oklab, var(--border) 50%, transparent);
     color: var(--text-dim);
+    vertical-align: top;
   }
 
+  /* The four columns whose content is short and reads as a figure: never break them. */
+  .peers__table td:nth-child(5),
+  .peers__table td:nth-child(6),
+  .peers__table td:nth-child(7),
+  .peers__table td:nth-child(8),
+  .peers__table td:nth-child(9) {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* An IPv6 address is 45 characters with nothing to break at, so it is given permission. */
   .peers__address {
     font-family: var(--font-mono);
+    overflow-wrap: anywhere;
   }
 
   /* A peer that actually sent bytes, as opposed to an address a tracker named. */
@@ -71,5 +157,81 @@
 
   .peers__row--connected .peers__address {
     color: var(--accent);
+  }
+
+  /*
+   * Below 60rem the columns stop being a compromise and start being unreadable — nine of
+   * these fields do not fit a phone at any share. Each row becomes a card with every field
+   * labelled and stacked, so nothing is hidden; the alternative, dropping columns, would
+   * hide the very rows-and-columns the page exists to show.
+   *
+   * `display: block` on table elements strips their implicit ARIA roles, which is why
+   * ui/providerPeers.js writes the roles explicitly. Do not remove them believing the tags
+   * are enough — under these rules they are not.
+   */
+  @container peers (max-width: 60rem) {
+    .peers__table {
+      display: block;
+    }
+
+    /*
+     * Gone, not visually hidden. CSS generated content is exposed to assistive technology and
+     * counts toward a cell's accessible name, so the ::before label below already names each
+     * cell — leaving a columnheader exposed as well makes a screen reader announce the column
+     * twice ("Endereço, Endereço 181.168.45.192"). One label channel, not two. `role="table"`
+     * does not require columnheader children, so the hierarchy stays valid without it.
+     */
+    .peers__table thead {
+      display: none;
+    }
+
+    .peers__table tbody,
+    .peers__table tr,
+    .peers__table td {
+      display: block;
+    }
+
+    .peers__table tr {
+      margin-bottom: var(--space-3);
+      padding: var(--space-2) var(--space-3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: color-mix(in oklab, var(--surface) 55%, transparent);
+    }
+
+    /*
+     * The label is positioned into a reserved gutter rather than laid out beside the value as
+     * a grid or flex track. Both of those make every child of the cell an item of their own,
+     * which threw the recurrence badge and the client's flag run onto lines of their own in
+     * the label column. A block cell with an absolute label keeps the value inline, so text,
+     * badge and flags stay one flowing run.
+     */
+    .peers__table td {
+      position: relative;
+      min-height: 1.5rem;
+      padding: var(--space-1) 0 var(--space-1) 6rem;
+      border-bottom: 0;
+      /* Undoes the nowrap the five exact columns carry, and lets an unbreakable client string
+         or IPv6 break rather than push the card wider than the phone — where .provenance
+         would clip it away with nothing to scroll. */
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    .peers__table td + td {
+      border-top: 1px solid color-mix(in oklab, var(--border) 40%, transparent);
+    }
+
+    .peers__table td::before {
+      content: attr(data-label);
+      position: absolute;
+      inset-inline-start: 0;
+      top: var(--space-1);
+      /* "Conectado" is the longest label at ~63px. */
+      width: 5.5rem;
+      color: var(--text-dim);
+      font-size: var(--text-xs);
+      letter-spacing: var(--tracking-wide);
+    }
   }
 }

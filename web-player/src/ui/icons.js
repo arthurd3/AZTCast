@@ -33,6 +33,19 @@ const PATHS = {
   fullscreenExit: ['M3.5 8H8V3.5M20.5 8H16V3.5M3.5 16H8v4.5M20.5 16H16v4.5'],
   search: ['M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z', 'M16.2 16.2 21 21'],
   copy: ['M9 9h10v12H9z', 'M15 9V3H5v12h4'],
+  /* Two circular arcs of r=11 on the chord (2.5,12)-(21.5,12): a lens 19 wide and 10.9
+     tall, which leaves room for the 2 stroke inside the 24 box. The pupil is the same
+     two-arc idiom the settings gear already uses for its inner circle. */
+  eye: [
+    'M2.5 12a11 11 0 0 1 19 0a11 11 0 0 1-19 0z',
+    'M12 14.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+  ],
+  /* The whole eye plus a stroke through it, the way volumeMute keeps its speaker. */
+  eyeOff: [
+    'M2.5 12a11 11 0 0 1 19 0a11 11 0 0 1-19 0z',
+    'M12 14.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+    'M4 4 20 20',
+  ],
   check: ['M4.5 12.5 9.5 17.5 19.5 7'],
   close: ['M6 6l12 12M18 6 6 18'],
   arrowLeft: ['M20 12H4', 'M10 6l-6 6 6 6'],
