@@ -4,6 +4,8 @@ import com.azt.streaming.acquisition.domain.TorrentDownloadException;
 import com.azt.streaming.ingestion.domain.StreamJobNotFoundException;
 import com.azt.streaming.ingestion.domain.VideoNotRepairableException;
 import com.azt.streaming.playback.domain.AssetNotFoundException;
+import com.azt.streaming.shared.storage.InsufficientStorageException;
+import com.azt.streaming.shared.storage.VideoIsKeptException;
 import com.azt.streaming.shared.storage.VideoNotFoundException;
 import com.azt.streaming.shared.ratelimit.RateLimitExceededException;
 import com.azt.streaming.transcoding.domain.TranscodingException;
@@ -81,6 +83,35 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                         "Too many requests",
                         "Ingestion is rate limited. Retry in %d seconds."
                                 .formatted(Math.max(1, e.retryAfter().toSeconds()))));
+    }
+
+    /**
+     * No room to start, said before starting rather than discovered two hours in.
+     *
+     * <p>507 rather than 503: the request was understood and is not going to succeed later on its
+     * own. Something has to give up space first, and only the person whose disk it is can decide
+     * what.
+     */
+    @ExceptionHandler(InsufficientStorageException.class)
+    public ProblemDetail handleInsufficientStorage(InsufficientStorageException e) {
+        log.warn("Refusing an ingestion: {}", e.getMessage());
+        return problem(
+                HttpStatus.INSUFFICIENT_STORAGE,
+                ProblemTypes.INSUFFICIENT_STORAGE,
+                "Not enough free space",
+                e.getMessage());
+    }
+
+    /**
+     * A delete stopped by the marker the library calls "Salvos".
+     *
+     * <p>409 rather than 403: nothing is forbidden here, the request simply conflicts with a state
+     * the caller can see and can change — either by un-keeping the video or by asking again with
+     * {@code force=true}.
+     */
+    @ExceptionHandler(VideoIsKeptException.class)
+    public ProblemDetail handleVideoIsKept(VideoIsKeptException e) {
+        return problem(HttpStatus.CONFLICT, ProblemTypes.VIDEO_IS_KEPT, "Video is kept", e.getMessage());
     }
 
     @ExceptionHandler(TorrentDownloadException.class)

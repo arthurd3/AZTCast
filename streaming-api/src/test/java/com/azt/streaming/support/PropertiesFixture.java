@@ -4,6 +4,7 @@ import com.azt.streaming.shared.config.StreamingProperties;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import org.springframework.util.unit.DataSize;
 
 /**
  * Builds {@link StreamingProperties} for tests that need one without a Spring context.
@@ -29,6 +30,8 @@ public final class PropertiesFixture {
     public static final class Builder {
         private Path downloadsDir = Path.of("target/test/downloads");
         private Path hlsDir = Path.of("target/test/hls");
+        private Duration downloadRetention = Duration.ofHours(24);
+        private DataSize minFreeSpace = DataSize.ofBytes(0);
         private String binary = "/bin/true";
         private String probeBinary = "/bin/true";
         private String videoCodec = "libx264";
@@ -155,9 +158,20 @@ public final class PropertiesFixture {
             return this;
         }
 
+        public Builder downloadRetention(Duration value) {
+            this.downloadRetention = value;
+            return this;
+        }
+
+        public Builder minFreeSpace(DataSize value) {
+            this.minFreeSpace = value;
+            return this;
+        }
+
+
         public StreamingProperties build() {
             return new StreamingProperties(
-                    new StreamingProperties.Storage(downloadsDir, hlsDir, Duration.ofDays(7)),
+                    new StreamingProperties.Storage(downloadsDir, hlsDir, downloadRetention, minFreeSpace),
                     new StreamingProperties.Ffmpeg(
                             binary,
                             probeBinary,

@@ -24,19 +24,22 @@ springdoc:
 aztcast:
   streaming:
     storage:
-      # Regenerable caches. Siblings under var/ so one ignore rule, one Docker
-      # volume and one `du` target cover both.
+      # Siblings under var/ so one ignore rule, one Docker volume and one `du`
+      # target cover both. Only the first of the two is regenerable.
       downloads-dir: ./var/downloads
       hls-dir: ./var/hls
-      # Matches redis.job-ttl. Media outliving its job leaves directories nothing
-      # can name; a job outliving its media reports READY for a video that is gone.
-      # Change them together.
+      # The HLS ladder is never deleted automatically. It is what you asked for, it
+      # sits on your disk, and it goes when you delete it -- see ADR-0030.
       #
-      # A video the library marks as kept is exempt from this and lives until it is
-      # deleted deliberately. That breaks the pairing in the harmless direction only:
-      # the job record still expires, leaving a listed video with no job behind it,
-      # which is what every video looks like after a restart anyway.
-      retention: 7d
+      # This governs the raw torrent under downloads/ only, and only the copies that
+      # were abandoned. A download whose transcode succeeded is discarded the moment
+      # that transcode is verified, so this is a backstop for a failed fetch or a
+      # crashed encode rather than the path most downloads take.
+      download-retention: 24h
+      # Refuse to start an ingestion with less than this free on the downloads
+      # volume. Nothing reclaims space on its own now, so the alternative to
+      # refusing up front is filling the disk and failing halfway through. 0 is off.
+      min-free-space: 2GB
 
     ffmpeg:
       binary: ffmpeg
@@ -291,8 +294,9 @@ aztcast:
       # ingestions are not detected, and ingestion is not rate limited.
       # Playback is unaffected either way — serving a segment never touches Redis.
       enabled: false
-      # Should not outlive the media itself, or a job reports READY for a video that has
-      # already been deleted.
+      # How long a finished job stays queryable. Not paired with anything on the storage
+      # side any more: media does not expire, and deleting a video deletes its job record
+      # with it, so this only bounds how long a progress record nobody is polling lingers.
       job-ttl: 7d
       rate-limit:
         # Small burst, modest sustained rate: one ingestion is hours of CPU and gigabytes

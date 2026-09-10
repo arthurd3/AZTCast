@@ -2,6 +2,8 @@ package com.azt.streaming.ingestion.web;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.BDDMockito.then;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -19,6 +21,7 @@ import com.azt.streaming.ingestion.domain.VideoNotRepairableException;
 import com.azt.streaming.shared.config.StreamingProperties;
 import com.azt.streaming.shared.storage.CatalogEntry;
 import com.azt.streaming.shared.storage.VideoCatalog;
+import com.azt.streaming.shared.storage.VideoIsKeptException;
 import com.azt.streaming.shared.storage.VideoNotFoundException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -256,6 +259,60 @@ class IngestionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].kept").value(true))
                 .andExpect(jsonPath("$[1].kept").value(false));
+    }
+
+    // ---------------------------------------------------------------- delete
+
+    @Test
+    @DisplayName("deletes a video, and does not ask twice about one nobody kept")
+    void deletesAVideo() throws Exception {
+        mockMvc.perform(delete("/api/v1/videos/" + VIDEO_ID)).andExpect(status().isNoContent());
+
+        then(ingestionService).should().delete(VIDEO_ID, false);
+    }
+
+    @Test
+    @DisplayName("a kept video answers 409, and says how to mean it")
+    void deletingAKeptVideoConflicts() throws Exception {
+        willThrow(new VideoIsKeptException(VIDEO_ID)).given(ingestionService).delete(VIDEO_ID, false);
+
+        mockMvc.perform(delete("/api/v1/videos/" + VIDEO_ID))
+                .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.type").value("https://aztcast.dev/problems/video-is-kept"))
+                // The detail names the way out. A 409 that does not is a dead end for anyone
+                // holding only the response.
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("force=true")));
+    }
+
+    @Test
+    @DisplayName("force=true reaches the service as force")
+    void forceIsCarriedThrough() throws Exception {
+        mockMvc.perform(delete("/api/v1/videos/" + VIDEO_ID + "?force=true")).andExpect(status().isNoContent());
+
+        then(ingestionService).should().delete(VIDEO_ID, true);
+    }
+
+    @Test
+    @DisplayName("deleting a video that is not there is a problem document, not a blank 404")
+    void deletingAnUnknownVideoIsANotFoundProblem() throws Exception {
+        willThrow(new VideoNotFoundException(VIDEO_ID)).given(ingestionService).delete(VIDEO_ID, false);
+
+        mockMvc.perform(delete("/api/v1/videos/" + VIDEO_ID))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.type").value("https://aztcast.dev/problems/video-not-found"));
+    }
+
+    @Test
+    @DisplayName("the keep sub-resource is not shadowed by the delete route")
+    void unkeepStillRoutesToTheSubResource() throws Exception {
+        // Two DELETEs under one collection, one a suffix of the other. If Spring ever preferred
+        // /{videoId} for /{videoId}/keep, un-keeping a video would silently delete it instead.
+        given(videoCatalog.setKept(VIDEO_ID, false)).willReturn(true);
+
+        mockMvc.perform(delete("/api/v1/videos/" + VIDEO_ID + "/keep")).andExpect(status().isNoContent());
+
+        then(ingestionService).should(org.mockito.Mockito.never()).delete(any(), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
     // ---------------------------------------------------------------- repair

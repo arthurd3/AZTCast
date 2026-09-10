@@ -20,6 +20,8 @@ public final class ProblemTypes {
     public static final URI TRANSCODING_FAILED = URI.create(BASE + "transcoding-failed");
     public static final URI NOT_REPAIRABLE = URI.create(BASE + "not-repairable");
     public static final URI RATE_LIMITED = URI.create(BASE + "rate-limited");
+    public static final URI INSUFFICIENT_STORAGE = URI.create(BASE + "insufficient-storage");
+    public static final URI VIDEO_IS_KEPT = URI.create(BASE + "video-is-kept");
     public static final URI INTERNAL_ERROR = URI.create(BASE + "internal-error");
 
     private ProblemTypes() {}

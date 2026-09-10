@@ -36,11 +36,14 @@ public class VideoCatalog {
      * Sidecar marking a video as one to keep. Its <em>existence</em> is the flag; the contents are
      * not read.
      *
-     * <p>A file rather than a field in {@code meta.json} because the reaper is the only thing that
-     * has to consult it, and {@code Files.exists} answers that without parsing JSON on every
-     * directory of every hourly sweep. A file rather than a row in Redis for the same reason the
-     * catalogue reads the disk at all: Redis is optional and expires things, and a video whose
-     * "keep" flag quietly aged out would be deleted by the very mechanism it was meant to escape.
+     * <p>It used to exempt a video from the reaper. Nothing reaps the ladder now, so what it marks
+     * is a decision rather than an exemption: this video was not an accident. Deleting one still
+     * stops to ask (ADR-0030), and the library filters on it.
+     *
+     * <p>A file rather than a field in {@code meta.json} because {@code Files.exists} answers the
+     * question without parsing JSON, and a file rather than a row in Redis for the same reason the
+     * catalogue reads the disk at all: Redis is optional and expires things, and a "keep" flag that
+     * quietly aged out would stop guarding the video it was set on.
      */
     static final String KEEP_FILE = "keep.json";
 
@@ -51,10 +54,10 @@ public class VideoCatalog {
      *
      * <p>Recorded because nothing else survives long enough to answer "where did this come from".
      * Job state is in memory by default and expires under a TTL when Redis is on; the magnet claim
-     * is keyed by infohash rather than by videoId; and the raw download is reaped on the same
-     * seven-day schedule with no exemption for a video someone kept. Given only a videoId on disk,
-     * there was no way back to the source — which makes repairing a video that lost a segment
-     * impossible, however intact the rest of it is.
+     * is keyed by infohash rather than by videoId; and the raw download is discarded as soon as the
+     * transcode that consumed it is verified. Given only a videoId on disk, there was no way back to
+     * the source — which makes repairing a video that lost a segment impossible, however intact the
+     * rest of it is.
      *
      * <p>It sits beside the media rather than in Redis for the same reason the title does: the
      * sidecar and the video share one lifetime and cannot drift apart.
@@ -92,7 +95,7 @@ public class VideoCatalog {
     /**
      * Records what a video should be called, next to the media it names.
      *
-     * <p>The sidecar lives inside the video's own directory so the reaper deletes it with everything
+     * <p>The sidecar lives inside the video's own directory so a delete takes it with everything
      * else: metadata and media then share one lifetime and cannot drift apart.
      *
      * <p>Never throws. This is a nicety; an ingestion that already downloaded and transcoded a
@@ -120,14 +123,18 @@ public class VideoCatalog {
      * from a retained download, just not re-fetched once that download is gone.
      */
     public Optional<String> sourceMagnetOf(String videoId) {
-        return Optional.ofNullable(field(mediaStorage.hlsDirectoryFor(videoId), MAGNET_FIELD));
+        // resolveHlsAsset, not hlsDirectoryFor: the latter creates the directory on demand, and this
+        // is now called by delete on ids that may not exist. Asking about a stranger's id would
+        // otherwise leave an empty directory behind, and the delete that follows would then report
+        // having removed something.
+        return mediaStorage.resolveHlsAsset(videoId, METADATA_FILE).map(sidecar -> field(sidecar.getParent(), MAGNET_FIELD));
     }
 
     /**
      * Marks a video to be kept, or stops keeping it.
      *
      * <p>Idempotent both ways. Returns false only when the video has no directory to mark, which is
-     * how the controller tells a real id from one that has already been reaped.
+     * how the controller tells a real id from one that has already been deleted.
      */
     public boolean setKept(String videoId, boolean kept) {
         // resolveHlsAsset, not hlsDirectoryFor: the latter creates the directory on demand, so
@@ -151,6 +158,17 @@ public class VideoCatalog {
             log.warn("Could not set kept={} for {}", kept, videoId, e);
             return false;
         }
+    }
+
+    /**
+     * Whether someone marked this video as one to keep.
+     *
+     * <p>Reads the marker directly rather than going through {@link #list()}: the caller is a delete
+     * asking about one video, and listing the whole library to answer that would stat every
+     * directory on disk to use one bit of the result.
+     */
+    public boolean isKept(String videoId) {
+        return mediaStorage.resolveHlsAsset(videoId, KEEP_FILE).isPresent();
     }
 
     private Optional<CatalogEntry> describe(Path directory) {

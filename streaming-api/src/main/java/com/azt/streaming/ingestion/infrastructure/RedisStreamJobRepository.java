@@ -43,6 +43,11 @@ public class RedisStreamJobRepository implements StreamJobRepository {
     }
 
     @Override
+    public void delete(String videoId) {
+        template.delete(key(videoId));
+    }
+
+    @Override
     public List<StreamJob> findUnfinished() {
         List<StreamJob> unfinished = new ArrayList<>();
         // SCAN, not KEYS. KEYS is O(N) over the whole keyspace and blocks the single-threaded

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 
 import com.azt.streaming.acquisition.domain.TorrentDownloadException;
 import com.azt.streaming.acquisition.domain.TorrentDownloader;
@@ -14,7 +15,12 @@ import com.azt.streaming.ingestion.domain.StreamJob;
 import com.azt.streaming.ingestion.domain.StreamJobNotFoundException;
 import com.azt.streaming.ingestion.domain.StreamJobStatus;
 import com.azt.streaming.ingestion.domain.VideoNotRepairableException;
+import com.azt.streaming.shared.storage.InsufficientStorageException;
 import com.azt.streaming.shared.storage.MediaStorage;
+import com.azt.streaming.shared.storage.VideoIsKeptException;
+import com.azt.streaming.shared.storage.VideoNotFoundException;
+import com.azt.streaming.shared.storage.VolumeSpace;
+import com.azt.streaming.support.PropertiesFixture;
 import com.azt.streaming.shared.storage.VideoCatalog;
 import com.azt.streaming.transcoding.domain.AudioPlan;
 import com.azt.streaming.transcoding.domain.AudioPreferences;
@@ -39,6 +45,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.util.unit.DataSize;
 
 @ExtendWith(MockitoExtension.class)
 class IngestionServiceTest {
@@ -70,6 +77,20 @@ class IngestionServiceTest {
         }
     };
 
+    /** A service whose properties differ from the shared fixture's. */
+    private IngestionService serviceWith(com.azt.streaming.shared.config.StreamingProperties properties) {
+        return new IngestionService(
+                mediaStorage,
+                videoCatalog,
+                torrentDownloader,
+                mediaTranscoder,
+                jobRepository,
+                ALWAYS_CLAIMS,
+                properties,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
+                Clock.fixed(Instant.parse("2026-09-08T12:00:00Z"), ZoneOffset.UTC));
+    }
+
     @BeforeEach
     void setUp() {
         jobRepository = new InMemoryStreamJobRepository();
@@ -81,6 +102,7 @@ class IngestionServiceTest {
                         mediaTranscoder,
                         jobRepository,
                         ALWAYS_CLAIMS,
+                        PropertiesFixture.defaults().build(),
                         new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
                         Clock.fixed(Instant.parse("2026-09-08T12:00:00Z"), ZoneOffset.UTC));
         // lenient: the lookup-only test never starts an ingestion, so it never uses this.
@@ -409,5 +431,118 @@ class IngestionServiceTest {
         assertThat(service.repair(VIDEO_ID)).isEqualTo(RepairAction.NOTHING_TO_DO);
 
         Mockito.verify(mediaTranscoder, Mockito.never()).plannedAudio(any());
+    }
+
+    // ------------------------------------------------------------ deleting
+
+    @Test
+    @DisplayName("deleting takes the ladder, the download, the job and the magnet claim")
+    void deleteRemovesEverythingAboutAVideo() {
+        // The claim especially. It outliving the media is what would make re-adding the same magnet
+        // hand back the id of a video that is gone, and the caller a library card that 404s.
+        MagnetRegistry registry = Mockito.mock(MagnetRegistry.class);
+        IngestionService withRegistry = new IngestionService(
+                mediaStorage,
+                videoCatalog,
+                torrentDownloader,
+                mediaTranscoder,
+                jobRepository,
+                registry,
+                PropertiesFixture.defaults().build(),
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
+                Clock.fixed(Instant.parse("2026-09-08T12:00:00Z"), ZoneOffset.UTC));
+        jobRepository.save(StreamJob.downloading("v1", MAGNET, Instant.parse("2026-09-08T12:00:00Z")));
+        given(videoCatalog.isKept("v1")).willReturn(false);
+        given(videoCatalog.sourceMagnetOf("v1")).willReturn(Optional.of(MAGNET));
+        given(mediaStorage.discardHls("v1")).willReturn(true);
+        given(mediaStorage.discardDownload("v1")).willReturn(true);
+
+        withRegistry.delete("v1", false);
+
+        then(mediaStorage).should().discardHls("v1");
+        then(mediaStorage).should().discardDownload("v1");
+        then(registry).should().release(MAGNET);
+        assertThat(jobRepository.findById("v1")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a kept video is refused, and forcing it is obeyed")
+    void keptVideosNeedForce() {
+        given(videoCatalog.isKept("v1")).willReturn(true);
+
+        assertThatThrownBy(() -> service.delete("v1", false)).isInstanceOf(VideoIsKeptException.class);
+        then(mediaStorage).should(Mockito.never()).discardHls(any());
+
+        given(videoCatalog.sourceMagnetOf("v1")).willReturn(Optional.empty());
+        given(mediaStorage.discardHls("v1")).willReturn(true);
+
+        service.delete("v1", true);
+
+        then(mediaStorage).should().discardHls("v1");
+    }
+
+    @Test
+    @DisplayName("an id with nothing on disk is a 404, not a cheerful no-op")
+    void deletingNothingIsNotFound() {
+        given(videoCatalog.isKept("v1")).willReturn(false);
+        given(videoCatalog.sourceMagnetOf("v1")).willReturn(Optional.empty());
+        given(mediaStorage.discardHls("v1")).willReturn(false);
+        given(mediaStorage.discardDownload("v1")).willReturn(false);
+
+        assertThatThrownBy(() -> service.delete("v1", false)).isInstanceOf(VideoNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("a half-finished ingestion can still be deleted, ladder or no ladder")
+    void deletesADownloadWithNoLadder() {
+        given(videoCatalog.isKept("v1")).willReturn(false);
+        given(videoCatalog.sourceMagnetOf("v1")).willReturn(Optional.empty());
+        given(mediaStorage.discardHls("v1")).willReturn(false);
+        given(mediaStorage.discardDownload("v1")).willReturn(true);
+
+        service.delete("v1", false);
+
+        then(mediaStorage).should().discardDownload("v1");
+    }
+
+    // ------------------------------------------------------------ the disk floor
+
+    @Test
+    @DisplayName("refuses an ingestion that would start below the floor")
+    void refusesToStartWithoutRoom() {
+        IngestionService floored =
+                serviceWith(PropertiesFixture.defaults().minFreeSpace(DataSize.ofGigabytes(2)).build());
+        given(mediaStorage.volumeSpace()).willReturn(Optional.of(new VolumeSpace(100_000_000_000L, 1_000_000L)));
+
+        assertThatThrownBy(() -> floored.startIngestion(MAGNET)).isInstanceOf(InsufficientStorageException.class);
+
+        // Refused before anything was claimed or written, which is the whole value of checking here
+        // rather than discovering it two hours into a download.
+        then(torrentDownloader).should(Mockito.never()).download(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("an unreadable filesystem is not a refusal")
+    void doesNotRefuseWhenTheVolumeCannotBeRead() {
+        // Declining to start because a stat call failed would be a different policy wearing the
+        // same clothes, and a worse one: it fails closed on a machine with plenty of room.
+        IngestionService floored =
+                serviceWith(PropertiesFixture.defaults().minFreeSpace(DataSize.ofGigabytes(2)).build());
+        given(mediaStorage.volumeSpace()).willReturn(Optional.empty());
+        given(mediaStorage.downloadDirectoryFor(any())).willReturn(Path.of("/downloads/x"));
+        given(torrentDownloader.download(any(), any(), any(), any())).willReturn(new CompletableFuture<>());
+
+        assertThat(floored.startIngestion(MAGNET).status()).isEqualTo(StreamJobStatus.DOWNLOADING);
+    }
+
+    @Test
+    @DisplayName("a floor of zero asks the filesystem nothing at all")
+    void zeroFloorSkipsTheCheck() {
+        given(mediaStorage.downloadDirectoryFor(any())).willReturn(Path.of("/downloads/x"));
+        given(torrentDownloader.download(any(), any(), any(), any())).willReturn(new CompletableFuture<>());
+
+        service.startIngestion(MAGNET);
+
+        then(mediaStorage).should(Mockito.never()).volumeSpace();
     }
 }

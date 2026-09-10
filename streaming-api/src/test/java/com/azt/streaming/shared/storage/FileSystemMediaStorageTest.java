@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -121,5 +122,62 @@ class FileSystemMediaStorageTest {
     private Path writeAsset(String fileName) throws IOException {
         Path directory = Files.createDirectories(hlsRoot.resolve(VIDEO_ID));
         return Files.writeString(directory.resolve(fileName), "#EXTM3U\n");
+    }
+
+    @Test
+    @DisplayName("discards a download, and reports whether there was one")
+    void discardsADownload() throws IOException {
+        Path directory = Files.createDirectories(root.resolve("downloads").resolve("v1"));
+        Files.writeString(directory.resolve("movie.mkv"), "bytes");
+
+        assertThat(storage.discardDownload("v1")).isTrue();
+        assertThat(directory).doesNotExist();
+        assertThat(storage.discardDownload("v1")).isFalse();
+    }
+
+    @Test
+    @DisplayName("discards a finished ladder — the one call that does, and only on request")
+    void discardsAFinishedLadder() throws IOException {
+        // discardIncompleteHls refuses this exact directory, on purpose: its sentinel means someone
+        // may be part-way through watching it. This is the deliberate-delete path, so it has no
+        // sentinel and must never be reached by anything scheduled.
+        Path directory = Files.createDirectories(hlsRoot.resolve("v1"));
+        Files.writeString(directory.resolve("master.m3u8"), "#EXTM3U");
+
+        assertThat(storage.discardIncompleteHls("v1")).isFalse();
+        assertThat(storage.discardHls("v1")).isTrue();
+        assertThat(directory).doesNotExist();
+    }
+
+    @Test
+    @DisplayName("an id that escapes the root deletes nothing")
+    void refusesToDiscardOutsideTheRoot() throws IOException {
+        Path outside = Files.createDirectories(root.resolve("outside"));
+
+        assertThat(storage.discardHls("../outside")).isFalse();
+        assertThat(storage.discardDownload("../outside")).isFalse();
+        assertThat(outside).exists();
+    }
+
+    @Test
+    @DisplayName("an empty id does not take the whole media root with it")
+    void refusesToDiscardTheRootItself() throws IOException {
+        // "" and "." both normalise to the root, which passes the containment check by definition.
+        // Without the extra guard this would delete every video on the disk.
+        Files.createDirectories(hlsRoot.resolve("v1"));
+
+        assertThat(storage.discardHls("")).isFalse();
+        assertThat(storage.discardHls(".")).isFalse();
+        assertThat(hlsRoot).exists();
+        assertThat(hlsRoot.resolve("v1")).exists();
+    }
+
+    @Test
+    void reportsTheSpaceOnTheMediaVolume() {
+        assertThat(storage.volumeSpace())
+                .hasValueSatisfying(space -> {
+                    assertThat(space.totalBytes()).isPositive();
+                    assertThat(space.usableBytes()).isNotNegative();
+                });
     }
 }

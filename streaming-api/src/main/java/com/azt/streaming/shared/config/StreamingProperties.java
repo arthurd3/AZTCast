@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.NestedConfigurationProperty;
+import org.springframework.util.unit.DataSize;
 import org.springframework.validation.annotation.Validated;
 
 /**
@@ -37,14 +38,25 @@ public record StreamingProperties(
      * ({@code ./download-torrents/} and {@code ./downloads/hls}); they are siblings now so a single
      * ignore rule, a single Docker volume and a single {@code du} target cover both.
      *
-     * <p>{@code retention} is how long media survives after its last modification. It should match
-     * {@code redis.job-ttl}: a job that outlives its media reports READY for a video that is gone,
-     * and media that outlives its job is a directory nothing refers to any more.
+     * <p>Nothing here governs the HLS ladder, and that absence is the point. A finished video is
+     * deleted when someone deletes it and at no other time, so there is no window to configure and
+     * nothing to keep in step with {@code redis.job-ttl}. See ADR-0030.
      *
-     * <p>Videos marked as kept in the library are exempt, and outlive both. See
-     * {@link com.azt.streaming.shared.storage.MediaReaper} for why that asymmetry is safe.
+     * <p>{@code downloadRetention} is how long an abandoned raw torrent survives past its last
+     * write. It is a backstop rather than the ordinary path: a download whose transcode succeeded is
+     * discarded the moment that transcode is verified, and this only catches the copies that never
+     * got that far — a failed fetch, a crashed encode, a process killed between the two.
+     *
+     * <p>{@code minFreeSpace} is the floor under the volume holding {@code downloadsDir}. An
+     * ingestion that would begin with less than this free is refused up front. Once nothing deletes
+     * itself, refusing work that cannot finish is the only honest thing left to do about a full
+     * disk. Zero disables the check.
      */
-    public record Storage(@NotNull Path downloadsDir, @NotNull Path hlsDir, @NotNull Duration retention) {}
+    public record Storage(
+            @NotNull Path downloadsDir,
+            @NotNull Path hlsDir,
+            @NotNull Duration downloadRetention,
+            @NotNull DataSize minFreeSpace) {}
 
     /**
      * The external ffmpeg process and the HLS ladder it produces.
@@ -362,8 +374,10 @@ public record StreamingProperties(
      * and lost on restart (as it always was), and duplicate ingestions are not detected. Playback is
      * completely unaffected either way — serving a segment never touches Redis.
      *
-     * @param jobTtl how long a finished job stays queryable. Should not outlive the media itself,
-     *     or a job reports READY for a video the reaper has already deleted.
+     * @param jobTtl how long a finished job stays queryable. No longer paired with a media
+     *     retention window — nothing expires media, and deleting a video removes its job record
+     *     outright. What is left is a bound on how long a progress record nobody is polling sits in
+     *     Redis, which is a question about Redis rather than about the video.
      */
     public record Redis(
             boolean enabled,

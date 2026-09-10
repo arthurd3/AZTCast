@@ -38,6 +38,10 @@ check "internal media location sealed" 404 "$(status "$BASE/_media/any/720p_000.
 # intermediary is allowed to store it, the client keeps being told "not ready" after it is.
 check "not-found is not cacheable"  "no-store" "$(header "$BASE/api/v1/stream/00000000-0000-0000-0000-000000000000/master.m3u8" 'cache-control')"
 
+check "storage reports free space"  200 "$(status "$BASE/api/v1/storage")"
+check "deleting an unknown video -> 404" 404 "$(status -X DELETE "$BASE/api/v1/videos/00000000-0000-0000-0000-000000000000")"
+
+
 # Delivery checks need a real video; skip them cleanly when the caller did not name one.
 #   VIDEO_ID=<uuid> ./scripts/smoke-test.sh http://localhost:8000
 if [ -n "${VIDEO_ID:-}" ]; then
