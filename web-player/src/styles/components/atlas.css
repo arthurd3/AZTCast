@@ -258,7 +258,10 @@
   }
 
   /* Protocol flags: present on nearly every peer, so they whisper rather than announce. */
+  /* On its own line under the client name: inline, this run of flags was ~90px of the widest
+     column, and it was setting that column's width by itself. */
   .peer-caps {
+    display: block;
     font-family: var(--font-mono);
     font-size: 0.625rem;
     color: var(--text-dim);
@@ -284,7 +287,13 @@
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-md);
     background: var(--glass-bg);
-    overflow: hidden;
+    /*
+     * clip, not hidden. Both crop the content to the radius, which is all this ever wanted,
+     * but `hidden` also makes the card a scroll container — and the peers table's sticky
+     * header then sticks to this box instead of to the page, which is to say it does not
+     * stick at all. `clip` creates no scroll container. Do not "simplify" it back.
+     */
+    overflow: clip;
   }
 
   .provenance__head {
@@ -358,6 +367,10 @@
 
   .provenance__peers {
     padding: 0 var(--space-3) var(--space-4);
+    /* The query container peers.css sizes its table against. The same table also renders in
+       the library's .peers panel, which is ~90px narrower at every viewport — the viewport
+       cannot tell the two apart, and near the breakpoint that 90px is what decides. */
+    container: peers / inline-size;
   }
 
   /* An expanded row is the one being read, and the one the map is filtered to. */
