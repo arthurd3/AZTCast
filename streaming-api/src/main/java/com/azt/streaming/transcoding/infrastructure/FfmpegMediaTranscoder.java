@@ -7,6 +7,7 @@ import com.azt.streaming.transcoding.domain.AudioPlan;
 import com.azt.streaming.transcoding.domain.EncodedAudio;
 import com.azt.streaming.transcoding.domain.EncodedRendition;
 import com.azt.streaming.transcoding.domain.HlsRendition;
+import com.azt.streaming.transcoding.domain.LadderReport;
 import com.azt.streaming.transcoding.domain.MediaProbe;
 import com.azt.streaming.transcoding.domain.MediaTranscoder;
 import com.azt.streaming.transcoding.domain.PlannedRendition;
@@ -18,6 +19,7 @@ import com.azt.streaming.transcoding.domain.TranscodingException;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -48,6 +50,7 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
     private final FfmpegCommandBuilder commandBuilder;
     private final ProcessRunner processRunner;
     private final MasterPlaylistWriter masterPlaylistWriter;
+    private final LadderIntegrity ladderIntegrity;
     private final SubtitlePublisher subtitlePublisher;
     private final VariantWeigher variantWeigher;
     private final Duration timeout;
@@ -60,6 +63,7 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
             FfmpegCommandBuilder commandBuilder,
             ProcessRunner processRunner,
             MasterPlaylistWriter masterPlaylistWriter,
+            LadderIntegrity ladderIntegrity,
             SubtitlePublisher subtitlePublisher,
             VariantWeigher variantWeigher,
             MeterRegistry meterRegistry,
@@ -70,6 +74,7 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
         this.commandBuilder = commandBuilder;
         this.processRunner = processRunner;
         this.masterPlaylistWriter = masterPlaylistWriter;
+        this.ladderIntegrity = ladderIntegrity;
         this.subtitlePublisher = subtitlePublisher;
         this.variantWeigher = variantWeigher;
         this.meterRegistry = meterRegistry;
@@ -115,18 +120,7 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
                     timeout,
                     new FfmpegProgress(source.durationSeconds(), onProgress));
 
-            List<SubtitlePlan> subtitles = subtitlePublisher.publish(
-                    inputFile, videoDirectory, plan.subtitles(), source.durationSeconds());
-            EncodedAudio audio = measureAudio(videoDirectory, plan.audio());
-            List<EncodedRendition> encoded = measure(videoDirectory, plan.renditions());
-
-            // Before the master playlist, so a video is never listed without the thumbnail the
-            // library expects to draw beside it.
-            writePoster(inputFile, videoDirectory, videoId);
-
-            // Written last, so its presence is the signal that the whole ladder is ready. Playback
-            // 404s until this exists, which is exactly the behaviour the player expects.
-            masterPlaylistWriter.write(videoDirectory, encoded, audio, subtitles);
+            publish(inputFile, videoDirectory, videoId, plan, source);
 
             log.info("Transcoding complete for videoId {}", videoId);
             outcome = "success";
@@ -148,6 +142,73 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
                     .tag("rungs", String.valueOf(rungs))
                     .register(meterRegistry));
         }
+    }
+
+    @Override
+    public LadderReport inspect(String videoId) {
+        return ladderIntegrity.inspectPublished(mediaStorage.hlsDirectoryFor(videoId));
+    }
+
+    @Override
+    @Async(AsyncConfiguration.TRANSCODING_EXECUTOR)
+    public CompletableFuture<Void> republish(Path inputFile, String videoId) {
+        log.info("Rebuilding the manifests for videoId {} from the media already on disk", videoId);
+        Path videoDirectory = mediaStorage.hlsDirectoryFor(videoId);
+
+        ProbedSource source = mediaProbe.probeSource(inputFile);
+        if (!source.hasVideo()) {
+            throw new TranscodingException("No video stream in " + inputFile);
+        }
+        // The same plan the ladder was built from, so the audio and subtitle renditions are
+        // described the same way. Only the encode is skipped.
+        TranscodePlan plan = planner.plan(source);
+        if (plan.audio().reason() != null) {
+            log.warn("Audio for videoId {}: {}", videoId, plan.audio().reason());
+        }
+        try {
+            publish(inputFile, videoDirectory, videoId, plan, source);
+        } catch (IOException e) {
+            throw new TranscodingException("Failed to write HLS output for videoId " + videoId, e);
+        }
+        log.info("Manifests rebuilt for videoId {}", videoId);
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * Everything after the encode: subtitles, measurement, poster, integrity check, master playlist.
+     *
+     * <p>Shared with {@link #republish} because rebuilding a manifest is exactly this and nothing
+     * else. Keeping one copy is what stops the repaired ladder from being described differently
+     * from the one the encode produced.
+     */
+    private void publish(
+            Path inputFile, Path videoDirectory, String videoId, TranscodePlan plan, ProbedSource source)
+            throws IOException {
+        List<SubtitlePlan> subtitles =
+                subtitlePublisher.publish(inputFile, videoDirectory, plan.subtitles(), source.durationSeconds());
+        EncodedAudio audio = measureAudio(videoDirectory, plan.audio());
+        List<EncodedRendition> encoded = measure(videoDirectory, plan.renditions());
+
+        // Before the master playlist, so a video is never listed without the thumbnail the library
+        // expects to draw beside it.
+        if (!Files.isRegularFile(videoDirectory.resolve(MediaStorage.POSTER))) {
+            writePoster(inputFile, videoDirectory, videoId);
+        }
+
+        // Checked before it is announced. The master playlist is the readiness sentinel — the
+        // catalogue lists a video if and only if this file exists — and it used to be written on
+        // the strength of ffmpeg exiting zero, which proves neither that the segments the playlists
+        // name are on disk nor that a browser can assemble any of them.
+        String master = masterPlaylistWriter.render(encoded, audio, subtitles);
+        List<String> problems = ladderIntegrity.verify(videoDirectory, master, encoded, audio, subtitles);
+        if (!problems.isEmpty()) {
+            throw new TranscodingException("The ladder for videoId %s is not publishable:%n  - %s"
+                    .formatted(videoId, String.join("%n  - ".formatted(), problems)));
+        }
+
+        // Written last, so its presence is the signal that the whole ladder is ready. Playback 404s
+        // until this exists, which is exactly the behaviour the player expects.
+        masterPlaylistWriter.write(videoDirectory, master);
     }
 
     /**

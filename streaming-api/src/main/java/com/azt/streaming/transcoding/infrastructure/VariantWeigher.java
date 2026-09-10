@@ -1,5 +1,6 @@
 package com.azt.streaming.transcoding.infrastructure;
 
+import com.azt.streaming.transcoding.domain.VariantPlaylist;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -50,27 +51,18 @@ public class VariantWeigher {
         }
 
         Path directory = playlist.getParent();
+        VariantPlaylist parsed = VariantPlaylist.parse(lines);
         long totalBytes = 0;
         double totalSeconds = 0;
         long peakBps = 0;
-        double pendingDuration = 0;
 
-        for (String line : lines) {
-            String trimmed = line.strip();
-            if (trimmed.startsWith("#EXTINF:")) {
-                pendingDuration = parseDuration(trimmed);
-                continue;
-            }
-            if (trimmed.isEmpty() || trimmed.startsWith("#") || pendingDuration <= 0) {
-                continue;
-            }
-            long bytes = sizeOf(directory.resolve(trimmed));
+        for (VariantPlaylist.Segment segment : parsed.segments()) {
+            long bytes = sizeOf(directory.resolve(segment.uri()));
             if (bytes > 0) {
                 totalBytes += bytes;
-                totalSeconds += pendingDuration;
-                peakBps = Math.max(peakBps, (long) (bytes * BITS_PER_BYTE / pendingDuration));
+                totalSeconds += segment.durationSeconds();
+                peakBps = Math.max(peakBps, (long) (bytes * BITS_PER_BYTE / segment.durationSeconds()));
             }
-            pendingDuration = 0;
         }
 
         if (totalSeconds <= 0 || totalBytes <= 0) {
@@ -80,20 +72,13 @@ public class VariantWeigher {
         return Optional.of(new Weight(average, (int) Math.min(Integer.MAX_VALUE, peakBps)));
     }
 
-    /** {@code #EXTINF:3.999978,} — the trailing comma is mandatory in the format and never useful. */
-    private static double parseDuration(String extinf) {
-        String value = extinf.substring("#EXTINF:".length());
-        int comma = value.indexOf(',');
-        if (comma >= 0) {
-            value = value.substring(0, comma);
-        }
-        try {
-            return Double.parseDouble(value.strip());
-        } catch (NumberFormatException e) {
-            return 0;
-        }
-    }
-
+    /**
+     * A segment's size, or 0 for one that is not there.
+     *
+     * <p>Weighing tolerates a missing segment because its job is a bandwidth estimate, not a
+     * verdict. Deciding whether the ladder is intact belongs to {@link LadderIntegrity}, which runs
+     * first and refuses to publish anything this would have to paper over.
+     */
     private static long sizeOf(Path segment) {
         try {
             return Files.size(segment);

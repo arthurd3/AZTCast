@@ -140,8 +140,51 @@ class MasterPlaylistWriterTest {
 
     @Test
     void writesTheMasterUnderTheVideoDirectory(@TempDir Path videoDirectory) throws IOException {
-        writer.write(videoDirectory, LADDER, AAC_AUDIO, List.of());
+        writer.write(videoDirectory, render());
 
         assertThat(videoDirectory.resolve("master.m3u8")).exists().content().isEqualTo(render());
+    }
+
+    @Test
+    @DisplayName("offers every rung a second time, without audio, when only Apple can decode it")
+    void advertisesAVideoOnlyFamilyForAppleOnlyAudio() {
+        // The defect: a variant's CODECS describes the whole combination, so `avc1.…,ec-3` is
+        // unsupported in Chrome even though the video half is fine. hls.js filtered away all five
+        // rungs and reported manifestIncompatibleCodecsError — the video did not play at all.
+        EncodedAudio copied = new EncodedAudio(AudioPlan.copy(SURROUND_EAC3, "no decoder"), 640_000, 700_000);
+        String playlist = writer.render(LADDER, copied, List.of());
+        List<String> variants = playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF")).toList();
+
+        assertThat(variants).hasSize(4);
+        // The ones carrying audio come first: it is the only nudge the format allows towards a
+        // player that can decode both.
+        assertThat(variants.subList(0, 2)).allMatch(l -> l.contains(",ec-3\"") && l.contains("AUDIO=\"aud\""));
+        assertThat(variants.subList(2, 4))
+                .allMatch(l -> !l.contains("ec-3") && !l.contains("AUDIO=") && l.contains("CODECS=\"avc1."));
+
+        // Same media, referenced a second way. Not one extra byte on disk.
+        assertThat(playlist.lines().filter("720p.m3u8"::equals)).hasSize(2);
+        // A video-only variant costs less, and says so.
+        assertThat(playlist).contains("BANDWIDTH=3910000").contains("BANDWIDTH=3210000");
+    }
+
+    @Test
+    @DisplayName("says nothing twice when the audio plays everywhere")
+    void doesNotDuplicateForAac() {
+        String playlist = render();
+
+        assertThat(playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF"))).hasSize(2);
+        assertThat(playlist.lines().filter("720p.m3u8"::equals)).hasSize(1);
+    }
+
+    @Test
+    void keepsSubtitlesOnBothFamilies() {
+        // Subtitles are their own group and their own segments; nothing about them depends on
+        // which audio the player ended up with.
+        EncodedAudio copied = new EncodedAudio(AudioPlan.copy(SURROUND_EAC3, "no decoder"), 640_000, 700_000);
+        List<SubtitlePlan> subtitles = List.of(new SubtitlePlan(0, "sub_en-0", "English", "en", false, false));
+
+        assertThat(writer.render(LADDER, copied, subtitles).lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF")))
+                .allMatch(l -> l.contains("SUBTITLES=\"subs\""));
     }
 }

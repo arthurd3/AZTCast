@@ -9,6 +9,7 @@ import com.azt.streaming.transcoding.domain.MediaProbe;
 import com.azt.streaming.transcoding.domain.MediaTranscoder;
 import com.azt.streaming.transcoding.domain.ProbedSource;
 import com.azt.streaming.transcoding.domain.ProbedVideo;
+import com.azt.streaming.transcoding.infrastructure.LadderIntegrity;
 import com.azt.streaming.transcoding.infrastructure.ProcessRunner;
 import java.nio.file.Path;
 import java.util.List;
@@ -75,8 +76,16 @@ class AsyncTranscodingIntegrationTest {
      */
     @MockitoBean private MediaProbe mediaProbe;
 
+    /**
+     * Mocked because this test writes no files: the ProcessRunner above is a mock, so there is no
+     * ladder on disk for the real check to pass. What is under test here is which thread the work
+     * runs on — {@code LadderIntegrityTest} is where the check itself is exercised.
+     */
+    @MockitoBean private LadderIntegrity ladderIntegrity;
+
     @Test
     void transcodingRunsOnTheNamedTranscodingExecutor() {
+        given(ladderIntegrity.verify(any(), any(), any(), any(), any())).willReturn(List.of());
         given(mediaProbe.probe(any())).willReturn(ProbedVideo.measured(true, "Main", 31));
         given(mediaProbe.probeSource(any()))
                 .willReturn(new ProbedSource(

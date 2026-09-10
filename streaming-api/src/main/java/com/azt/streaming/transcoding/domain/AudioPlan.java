@@ -1,5 +1,8 @@
 package com.azt.streaming.transcoding.domain;
 
+import java.util.Locale;
+import java.util.Set;
+
 /**
  * The one audio rendition every rung will share, and how ffmpeg should produce it.
  *
@@ -51,12 +54,43 @@ public record AudioPlan(
     /** The {@code GROUP-ID} every variant points at with {@code AUDIO="…"}. */
     public static final String GROUP_ID = "aud";
 
+    /**
+     * Audio codecs a mainstream browser will accept through Media Source Extensions.
+     *
+     * <p>The list that is missing from here is the point: {@code ec-3}, {@code ac-3} and
+     * {@code alac} play on Apple's platforms and nowhere else. That matters far more than it
+     * sounds, because a variant's {@code CODECS} attribute describes the whole combination — so an
+     * audio codec the browser lacks does not cost the viewer the audio, it disqualifies the entire
+     * variant. Chrome answers {@code false} to
+     * {@code isTypeSupported('video/mp4; codecs="avc1.640028,ec-3"')} even though it answers
+     * {@code true} to the video half alone, and hls.js then filters away every rung and reports
+     * {@code manifestIncompatibleCodecsError}. The video does not play at all.
+     */
+    private static final Set<String> WIDELY_PLAYABLE =
+            Set.of("mp4a.40.2", "mp4a.40.5", "mp4a.40.29", "mp4a.40.34", "opus", "flac");
+
     public boolean present() {
         return mode != Mode.NONE;
     }
 
     public boolean isCopy() {
         return mode == Mode.COPY;
+    }
+
+    /**
+     * Whether a browser that is not Safari can be expected to decode this rendition.
+     *
+     * <p>False here is what makes {@code MasterPlaylistWriter} advertise every rung a second time
+     * without an audio group, so that the video remains playable on a machine that cannot decode
+     * the audio travelling beside it.
+     */
+    public boolean isWidelyPlayable() {
+        return !present() || isWidelyPlayableCodec(codecs);
+    }
+
+    /** Whether one RFC 6381 audio identifier is decodable outside Apple's platforms. */
+    public static boolean isWidelyPlayableCodec(String codec) {
+        return codec != null && WIDELY_PLAYABLE.contains(codec.toLowerCase(Locale.ROOT));
     }
 
     public String playlistFileName() {

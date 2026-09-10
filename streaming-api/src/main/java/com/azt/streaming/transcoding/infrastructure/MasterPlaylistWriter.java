@@ -51,19 +51,35 @@ public class MasterPlaylistWriter {
         }
         subtitles.forEach(subtitle -> appendSubtitleRendition(playlist, subtitle));
 
+        boolean hasSubtitles = !subtitles.isEmpty();
         for (EncodedRendition encoded : renditions) {
-            appendVariant(playlist, encoded, audio, !subtitles.isEmpty());
+            appendVariant(playlist, encoded, audio, hasSubtitles, true);
+        }
+
+        // The same rungs again, without the audio group, when the audio is one only Apple's
+        // platforms decode. A player keeps whichever family its CODECS attribute says it can
+        // assemble; a browser that cannot decode E-AC-3 keeps these and plays the video, where
+        // before it was left with no variant at all and refused the stream outright.
+        //
+        // The same media playlists, referenced a second way. Not one byte more on disk.
+        if (audio.present() && !audio.plan().isWidelyPlayable()) {
+            for (EncodedRendition encoded : renditions) {
+                appendVariant(playlist, encoded, audio, hasSubtitles, false);
+            }
         }
         return playlist.toString();
     }
 
-    public void write(
-            Path videoDirectory, List<EncodedRendition> renditions, EncodedAudio audio, List<SubtitlePlan> subtitles)
-            throws IOException {
+    /**
+     * Writes a playlist that has already been rendered and checked.
+     *
+     * <p>Separate from {@link #render} so the integrity check inspects the exact bytes that will
+     * land on disk. Rendering twice — once to verify, once to write — would let a change between
+     * the two go unnoticed, which is precisely the class of thing the check exists to catch.
+     */
+    public void write(Path videoDirectory, String rendered) throws IOException {
         Files.writeString(
-                videoDirectory.resolve(MediaStorage.MASTER_PLAYLIST),
-                render(renditions, audio, subtitles),
-                StandardCharsets.UTF_8);
+                videoDirectory.resolve(MediaStorage.MASTER_PLAYLIST), rendered, StandardCharsets.UTF_8);
     }
 
     /**
@@ -125,31 +141,41 @@ public class MasterPlaylistWriter {
      * rung plus the audio group it is being pointed at — because that is what the attribute means.
      * With the audio demuxed into its own rendition, the rung's own probe reports video only, so
      * leaving it at that would advertise a silent stream for something that has sound.
+     *
+     * <p>And it is why the attribute is dangerous. A codec the player cannot decode does not cost
+     * it that stream; it disqualifies the whole variant. That is the exact mechanism by which a
+     * ladder of five perfectly good H.264 rungs became unplayable in Chrome.
+     *
+     * @param withAudio whether this entry joins the audio group. False emits the same rung as a
+     *     video-only offering, for a player that cannot decode what is in the group.
      */
     private static void appendVariant(
-            StringBuilder playlist, EncodedRendition encoded, EncodedAudio audio, boolean hasSubtitles) {
+            StringBuilder playlist,
+            EncodedRendition encoded,
+            EncodedAudio audio,
+            boolean hasSubtitles,
+            boolean withAudio) {
         HlsRendition rendition = encoded.rendition();
+        boolean joined = withAudio && audio.present();
         playlist
                 .append("#EXT-X-STREAM-INF:BANDWIDTH=")
-                .append(encoded.peakVideoBps() + audio.peakBps())
+                .append(encoded.peakVideoBps() + (joined ? audio.peakBps() : 0))
                 .append(",AVERAGE-BANDWIDTH=")
-                .append(encoded.averageVideoBps() + audio.averageBps())
+                .append(encoded.averageVideoBps() + (joined ? audio.averageBps() : 0))
                 .append(",RESOLUTION=")
                 .append(rendition.resolution())
                 .append(",CODECS=\"")
-                .append(codecsFor(encoded, audio))
+                .append(joined ? encoded.codecs() + "," + audio.plan().codecs() : encoded.codecs())
                 .append('"');
-        if (audio.present()) {
+        if (joined) {
             playlist.append(",AUDIO=\"").append(AudioPlan.GROUP_ID).append('"');
         }
         if (hasSubtitles) {
+            // Kept on both families. Subtitles are their own group and their own segments; nothing
+            // about them depends on which audio the player ended up with.
             playlist.append(",SUBTITLES=\"").append(SubtitlePlan.GROUP_ID).append('"');
         }
         playlist.append('\n').append(rendition.playlistFileName()).append('\n');
-    }
-
-    private static String codecsFor(EncodedRendition encoded, EncodedAudio audio) {
-        return audio.present() ? encoded.codecs() + "," + audio.plan().codecs() : encoded.codecs();
     }
 
     /**

@@ -216,6 +216,7 @@ class RealFfmpegLadderTest {
                 commandBuilder,
                 processRunner,
                 new MasterPlaylistWriter(),
+                new LadderIntegrity(),
                 new SubtitlePublisher(commandBuilder, processRunner),
                 new VariantWeigher(),
                 new SimpleMeterRegistry(),
@@ -248,6 +249,7 @@ class RealFfmpegLadderTest {
                 commandBuilder,
                 processRunner,
                 new MasterPlaylistWriter(),
+                new LadderIntegrity(),
                 new SubtitlePublisher(commandBuilder, processRunner),
                 new VariantWeigher(),
                 new SimpleMeterRegistry(),
@@ -412,6 +414,11 @@ class RealFfmpegLadderTest {
             @Override
             public boolean discardIncompleteHls(String videoId) {
                 return false;
+            }
+
+            @Override
+            public Optional<Path> existingDownload(String videoId) {
+                return Optional.empty();
             }
 
             @Override
