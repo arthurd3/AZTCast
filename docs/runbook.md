@@ -143,6 +143,49 @@ services:
 The read-only mount on `web-player` is not optional: nginx needs it to serve segments
 through `X-Accel-Redirect`, and it must not be able to write there.
 
+## The torrent engine
+
+In containers, BitTorrent runs in `torrent-engine` rather than in the API
+([ADR-0032](decisions/0032-the-swarm-runs-in-a-process-of-its-own.md)). Its logs are where a
+download's swarm-side story is:
+
+```bash
+docker compose -f deploy/docker-compose.yml logs -f torrent-engine
+# engine: ready on /run/aztcast/engine.sock (libtorrent 2.0.11.0)
+# engine: listening on 0.0.0.0:6891,[::]:6891 encryption=REQUIRE_ENCRYPTED lsd=off pex=off
+# engine: <videoId> keeping Sintel/Sintel.mp4 (129241752 bytes) of 11 files
+```
+
+**"Torrent engine is not reachable"** in the API's log means the socket is not there: the engine
+container is down, or the `engine-socket` volume is not mounted into both. The API answers the
+ingestion with a failure rather than hanging, and nothing else is affected — the library keeps
+serving.
+
+**Network settings only take effect on the first download after a restart.** The session is shared
+by every torrent, so the second magnet cannot move the listen port out from under the first. The
+engine says so when it ignores a set:
+
+```
+engine: session already configured, using its settings for <videoId>
+```
+
+Change `aztcast.streaming.torrent.network.*` and restart `torrent-engine` for it to matter.
+
+**To go back to the in-process client**, set `aztcast.streaming.torrent.engine: embedded`. That is
+the default outside the `docker` profile, and it is what `make dev` runs — the sandbox is a
+container thing, so there is nothing to apply on a laptop. It is also the abandoned `bt` library
+rather than a maintained one, which is the trade.
+
+**What the engine can and cannot do**, if you are checking rather than trusting:
+
+```bash
+docker compose -f deploy/docker-compose.yml exec torrent-engine id                 # uid 10001
+docker compose -f deploy/docker-compose.yml exec torrent-engine \
+  grep -E '^Cap(Prm|Eff|Bnd)' /proc/self/status                                    # all zero
+docker compose -f deploy/docker-compose.yml exec torrent-engine ls /var/lib/aztcast # downloads, no hls
+docker compose -f deploy/docker-compose.yml exec torrent-engine getent hosts redis  # no such host
+```
+
 ## Torrent throughput
 
 The numbers that govern download speed are under

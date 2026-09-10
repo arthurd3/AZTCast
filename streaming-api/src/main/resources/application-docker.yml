@@ -38,6 +38,12 @@ aztcast:
       enabled: true
 
     torrent:
+      # Brokered here, and only here. The sandbox this buys -- own user, own network, no
+      # capabilities, one writable directory -- is a container thing, so this is the profile
+      # where it can actually be applied. See ADR-0032 and the torrent-engine service in
+      # deploy/docker-compose.yml.
+      engine: brokered
+      engine-socket: /run/aztcast/engine.sock
       network:
         # Stricter in a container than on a laptop, because the container is the thing
         # that gets pointed at a tunnel. None of it is anonymity — see the header of

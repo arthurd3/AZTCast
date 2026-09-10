@@ -34,6 +34,11 @@ import org.springframework.context.annotation.Configuration;
  * ({@code Bt.client(runtime)}); the swarm-facing machinery is built once.
  */
 @Configuration
+@ConditionalOnProperty(
+        prefix = "aztcast.streaming.torrent",
+        name = "engine",
+        havingValue = "embedded",
+        matchIfMissing = true)
 @Slf4j
 public class BtRuntimeConfiguration {
 
@@ -217,25 +222,6 @@ public class BtRuntimeConfiguration {
             ServiceModule.extend(binder).addMessagingAgent(new PeerWireAgent(peerFactsRegistry));
             ProtocolModule.extend(binder).addHandshakeHandler(new PeerHandshakeInspector(peerFactsRegistry));
         };
-    }
-
-    /**
-     * Where peer sightings go when the provider log is switched off.
-     *
-     * <p>Gated on the same flag as the log rather than on {@code @ConditionalOnMissingBean}, which
-     * was the first attempt and does not work here: that condition is evaluated in the order
-     * configuration classes happen to be processed, which is only defined for auto-configuration.
-     * Between two ordinary {@code @Configuration} classes it raced, and lost — the context failed to
-     * start with two candidate sinks. Two conditions on one property cannot both be true.
-     */
-    @Bean
-    @ConditionalOnProperty(
-            prefix = "aztcast.streaming.providers",
-            name = "enabled",
-            havingValue = "false",
-            matchIfMissing = true)
-    public PeerObservationSink noOpPeerObservationSink() {
-        return PeerObservationSink.NONE;
     }
 
     @Bean

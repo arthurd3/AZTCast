@@ -166,6 +166,17 @@ aztcast:
       # spend nine tenths of its bandwidth on episodes nobody would ever be served.
       download-video-only: true
 
+      # Where the BitTorrent client runs.
+      #
+      #   embedded  the bt library inside this JVM. Every byte from a stranger is parsed in the
+      #             process that also holds your media root, your job store and your provider
+      #             database. It is the default because it needs nothing installed.
+      #   brokered  a separate sandboxed process over a Unix socket, which can write to the
+      #             downloads directory and do nothing else. It is what the compose stack runs,
+      #             because that is where the sandbox can actually be applied. See ADR-0032.
+      engine: embedded
+      engine-socket: /run/aztcast/engine.sock
+
       # Announce URLs added to every magnet, on top of whatever it carries. Plenty of
       # magnets arrive with no &tr= at all and leave DHT to find the swarm alone, which
       # is slow to start and worse on a thin torrent.

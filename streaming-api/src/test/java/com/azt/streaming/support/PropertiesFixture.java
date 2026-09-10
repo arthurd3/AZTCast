@@ -31,6 +31,8 @@ public final class PropertiesFixture {
         private Path downloadsDir = Path.of("target/test/downloads");
         private Path hlsDir = Path.of("target/test/hls");
         private Duration downloadRetention = Duration.ofHours(24);
+        private StreamingProperties.Engine engine = StreamingProperties.Engine.EMBEDDED;
+        private Path engineSocket = Path.of("/run/aztcast/engine.sock");
         private DataSize minFreeSpace = DataSize.ofBytes(0);
         private List<String> allowedHosts = List.of();
         private String binary = "/bin/true";
@@ -174,6 +176,16 @@ public final class PropertiesFixture {
             return this;
         }
 
+        public Builder engine(StreamingProperties.Engine value) {
+            this.engine = value;
+            return this;
+        }
+
+        public Builder engineSocket(Path value) {
+            this.engineSocket = value;
+            return this;
+        }
+
         public StreamingProperties build() {
             return new StreamingProperties(
                     new StreamingProperties.Storage(downloadsDir, hlsDir, downloadRetention, minFreeSpace),
@@ -202,6 +214,8 @@ public final class PropertiesFixture {
                             extraTrackers,
                             deadTrackers,
                             downloadVideoOnly,
+                            engine,
+                            engineSocket,
                             new StreamingProperties.Network(
                                     StreamingProperties.Encryption.PREFER_ENCRYPTED,
                                     true,

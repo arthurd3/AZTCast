@@ -45,6 +45,25 @@ enforces this.
 
 New configuration goes in `StreamingProperties`, not in a `@Value` field.
 
+## The torrent engine
+
+`torrent-engine/` is C++ and does not build with `make test`. That is deliberate: it needs
+libtorrent-rasterbar, which is packaged on Debian and not everywhere, so it builds in its container
+rather than on your machine.
+
+```bash
+docker build -t aztcast/torrent-engine:dev torrent-engine
+```
+
+Everything else works without it. `make dev` runs the in-process engine, which is the default
+outside the `docker` profile — see [ADR-0032](docs/decisions/0032-the-swarm-runs-in-a-process-of-its-own.md)
+for why there are two, and what the second one buys.
+
+If you change the wire protocol, change both ends in one commit. The contract lives in
+`torrent-engine/src/protocol.hpp` and `BrokeredTorrentDownloader`, and
+`BrokeredTorrentDownloaderTest` speaks it over a real Unix socket — a fake engine there is cheaper
+than a real swarm and catches the shape of a message going wrong.
+
 ## Commits
 
 One logical change each. For restructuring specifically: **move first, edit

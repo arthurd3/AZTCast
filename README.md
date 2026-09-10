@@ -64,6 +64,7 @@ and gets four where Cosmos Laundromat, a similar height, gets five.*
 | ---------------- | -------------------------------------------------------------- |
 | `streaming-api/` | Spring Boot 3.5 / Java 21 API: acquires, transcodes, serves HLS |
 | `web-player/`    | Vanilla-JS player built with Vite, using hls.js                 |
+| `torrent-engine/` | The BitTorrent client, in a process of its own. C++ and libtorrent, sandboxed, reached over a Unix socket ([ADR-0032](docs/decisions/0032-the-swarm-runs-in-a-process-of-its-own.md)). |
 | `deploy/`        | docker compose (API, nginx, Redis) and the nginx configuration   |
 | `docs/`          | Architecture, API contract, runbook, decision records           |
 | `scripts/`       | Prerequisite check, dev runner, smoke test                      |
@@ -595,6 +596,16 @@ covers that half, and the [VPN overlay](deploy/docker-compose.vpn.yml) is the
 answer to it). The HTTP surface has no such need, and it is the one that starts
 downloads and deletes videos. So it does not face outward
 ([ADR-0031](docs/decisions/0031-only-the-swarm-faces-outward.md)).
+
+**In containers, the thing on the far side of that port is not this API.**
+BitTorrent runs in `torrent-engine`, a separate process with its own user, no
+capabilities, a read-only filesystem, its own network and write access to the
+downloads directory and nothing else — it cannot reach Redis, cannot see the
+finished videos, and reaches the API only through a Unix socket. So a bug in the
+code parsing bytes from strangers is a bug in a process that can do almost
+nothing ([ADR-0032](docs/decisions/0032-the-swarm-runs-in-a-process-of-its-own.md)).
+Run outside a container and it is the older arrangement: the client runs inside
+the JVM, because a sandbox is a thing a container gives you.
 
 **The API binds to loopback, and so does the published web port.** Serving the
 LAN takes two deliberate changes — `WEB_BIND` or `server.address`, *and* an entry

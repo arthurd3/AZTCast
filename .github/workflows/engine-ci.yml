@@ -1,0 +1,50 @@
+# The torrent engine builds in a container, not on a runner, for the same reason it builds in one
+# locally: libtorrent-rasterbar is packaged on Debian and the compiler, the library and the JSON
+# header all come from there. Building it any other way would be a second recipe to keep in step
+# with the Dockerfile that actually ships.
+name: engine-ci
+
+on:
+  push:
+    branches: [main]
+    paths: ['torrent-engine/**', '.github/workflows/engine-ci.yml']
+  pull_request:
+    paths: ['torrent-engine/**', '.github/workflows/engine-ci.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # -Wall -Wextra are on in CMakeLists, and this is the process that parses bytes from
+      # strangers — a warning here is worth reading before it is worth ignoring.
+      - name: Build the engine image
+        run: docker build -t aztcast/torrent-engine:ci torrent-engine
+
+      # It should come up, say what it is, and create its socket. Anything past that needs a swarm,
+      # which is not CI's business.
+      - name: It starts and opens its control socket
+        run: |
+          docker run -d --name engine -v engine-sock:/run/aztcast aztcast/torrent-engine:ci
+          for i in $(seq 1 20); do
+            docker logs engine 2>&1 | grep -q 'engine: ready on' && break
+            sleep 1
+          done
+          docker logs engine
+          docker logs engine 2>&1 | grep -q 'engine: ready on' \
+            || { echo "engine never reported ready"; exit 1; }
+          docker exec engine test -S /run/aztcast/engine.sock \
+            || { echo "no control socket"; exit 1; }
+
+      # The sandbox is the load-bearing half of ADR-0032, so it is asserted rather than assumed.
+      # These are properties of the image; the network and mount halves belong to compose and are
+      # checked in the runbook.
+      - name: It runs unprivileged
+        run: |
+          test "$(docker exec engine id -u)" = "10001" || { echo "not running as 10001"; exit 1; }
+          docker exec engine grep -E '^CapEff:\s+0000000000000000' /proc/self/status \
+            || { echo "engine holds capabilities"; exit 1; }

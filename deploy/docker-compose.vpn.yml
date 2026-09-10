@@ -5,17 +5,20 @@
 #   cp deploy/vpn.env.example deploy/vpn.env      # then fill it in
 #   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.vpn.yml up --build
 #
-# What this actually buys, stated plainly. Trackers and peers see the VPN's address
-# instead of this machine's, which is real and is the point. It is not anonymity: the
-# VPN provider can still see the traffic, and anyone who can compel or compromise them
-# is back to where they started. Nothing here defeats an adversary at that level, and a
-# setup that claims otherwise is lying.
+# What this actually buys, stated plainly. Trackers and peers see the VPN's address instead of
+# this machine's, which is real and is the point. It is not anonymity: the VPN provider can
+# still see the traffic, and anyone who can compel or compromise them is back to where they
+# started. Nothing here defeats an adversary at that level, and a setup that claims otherwise
+# is lying.
 #
-# The whole API shares gluetun's network namespace, so the tunnel dropping takes the API
-# offline with it. That is the safe failure and it is deliberate: the alternative is a
-# kill-switch that fails open, which is not a kill-switch. If you would rather the API
-# kept serving finished video while only acquisition is confined, acquisition has to move
-# into a container of its own — a bigger change than this file.
+# This file used to confine the whole API, because the BitTorrent client ran inside it. It said
+# so, and said what it would take to do better: "If you would rather the API kept serving
+# finished video while only acquisition is confined, acquisition has to move into a container of
+# its own — a bigger change than this file." It has (ADR-0032), so this file is now the smaller
+# thing it wanted to be.
+#
+# The kill switch therefore fails closed on downloads alone. A dropped tunnel stops acquisition
+# and leaves the library, the player and every finished video serving exactly as before.
 
 name: aztcast
 
@@ -30,34 +33,22 @@ services:
       # Not committed. See vpn.env.example for the keys your provider needs.
       - ./vpn.env
     environment:
-      # The kill switch. On, gluetun's iptables rules drop anything that is not going
-      # through the tunnel, so a dropped VPN means no traffic rather than traffic in the
-      # clear — which is the whole reason for running it this way.
+      # The kill switch. On, gluetun's iptables rules drop anything that is not going through
+      # the tunnel, so a dropped VPN means no traffic rather than traffic in the clear.
       FIREWALL: "on"
-      # ...with one hole, and it has to be here: the API still has to reach Redis, and
-      # nginx still has to reach the API. Both are inside this compose network, which the
-      # firewall would otherwise treat like any other destination. Must match the subnet
-      # pinned at the bottom of this file.
-      FIREWALL_OUTBOUND_SUBNETS: "172.29.0.0/16"
-      # Torrent traffic is chatty and gluetun logs every connection at debug.
+      # No FIREWALL_OUTBOUND_SUBNETS, and its absence is the improvement. The old overlay had to
+      # punch a hole for the API to reach Redis and for nginx to reach the API, because all of
+      # that lived inside this namespace. The only thing in here now is the engine, and the
+      # engine's one channel to the rest of the stack is a Unix socket — a file, not a route.
+      # There is nothing left for a firewall exception to be for.
       LOG_LEVEL: info
     ports:
-      # The API's port is published here rather than on streaming-api: a container using
-      # network_mode: service: has no network stack of its own and cannot declare ports.
-      # Only bound to loopback — nothing outside this host needs to reach the API directly,
-      # since nginx is the front door.
-      - "127.0.0.1:8080:8080"
-      # Incoming peer connections, if your provider gives you a forwarded port. Without
-      # one the swarm still works, outbound-only, with fewer peers.
+      # Incoming peer connections, if your provider gives you a forwarded port. Without one the
+      # swarm still works, outbound-only, with fewer peers. Published here rather than on
+      # torrent-engine: a container using network_mode: service: has no network stack of its own
+      # and cannot declare ports.
       - "${TORRENT_PORT:-6891}:6891/tcp"
       - "${TORRENT_PORT:-6891}:6891/udp"
-    networks:
-      default:
-        aliases:
-          # So nginx's existing `proxy_pass http://streaming-api:8080` keeps resolving.
-          # streaming-api itself no longer appears in DNS once it shares this namespace,
-          # and the name now points here — which is the same place, one hop earlier.
-          - streaming-api
     healthcheck:
       test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
       interval: 30s
@@ -66,30 +57,26 @@ services:
       start_period: 30s
     restart: unless-stopped
 
-  streaming-api:
-    # Shares gluetun's network stack entirely: every packet this process sends, including
-    # DHT's UDP and every peer connection, leaves through the tunnel. This is why no proxy
-    # setting is needed in the application — and why none would have worked, since the
-    # BitTorrent library dials raw NIO channels that ignore the JVM's proxy properties.
+  torrent-engine:
+    # Shares gluetun's network stack entirely: every packet this process sends, including DHT's
+    # UDP and every peer connection, leaves through the tunnel. Nothing else in the stack is in
+    # here, which is the difference between this and the version that confined the whole API.
     network_mode: "service:gluetun"
-    # Cleared, not overridden. A container sharing another's network namespace owns no ports
-    # of its own, and Docker refuses the pair outright: "conflicting options: port publishing
-    # and the container type network mode". The base stack publishes 6891 so inbound peers can
-    # reach it; here gluetun publishes it instead, a few lines up. !reset is the only way to
-    # drop a list in an overlay — Compose appends to lists, so an empty `ports:` would merge to
-    # the base's entries and change nothing.
+    # Cleared, not overridden. A container sharing another's network namespace owns no ports of
+    # its own, and Docker refuses the pair outright: "conflicting options: port publishing and
+    # the container type network mode". !reset is the only way to drop a list in an overlay —
+    # Compose appends to lists, so an empty `ports:` would merge with the base's entries.
     ports: !reset []
+    # Same reason: network_mode and networks cannot both be set.
+    networks: !reset []
     depends_on:
       gluetun:
         condition: service_healthy
-      redis:
-        condition: service_healthy
 
-networks:
-  default:
-    ipam:
-      config:
-        # Pinned so FIREWALL_OUTBOUND_SUBNETS above can name it. Docker's default pool is
-        # allocated at creation time, and a firewall rule cannot be written against a
-        # subnet nobody knows yet.
-        - subnet: 172.29.0.0/16
+  streaming-api:
+    # Deliberately untouched. It stays on the default network, keeps talking to Redis, and keeps
+    # being reachable by nginx. It has no business in the tunnel now that it does not touch the
+    # swarm, and putting it there would only mean a dropped VPN takes the library down with it.
+    depends_on:
+      torrent-engine:
+        condition: service_started

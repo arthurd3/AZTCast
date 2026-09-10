@@ -1,8 +1,11 @@
 package com.azt.streaming.acquisition.infrastructure;
 
 import bt.magnet.MagnetUri;
+import bt.magnet.MagnetUriParser;
 import com.azt.streaming.shared.config.StreamingProperties;
 import org.springframework.beans.factory.annotation.Autowired;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -94,6 +97,32 @@ public class MagnetTrackerInjector {
         merged.forEach(builder::tracker);
         parsed.getPeerAddresses().forEach(builder::peer);
         return builder.buildUri();
+    }
+
+    /**
+     * The same augmentation, rendered back as a {@code magnet:} string.
+     *
+     * <p>Exists because the brokered engine takes a URI over a socket rather than a parsed object.
+     * Both paths therefore agree on which trackers a magnet gets, which they would not if the engine
+     * did its own merging — the dead-tracker list would apply on one side only, and a stale announce
+     * host would cost a full tracker timeout per round on exactly the deployment that was meant to
+     * be the hardened one.
+     *
+     * <p>Peer addresses ({@code x.pe}) are carried through rather than dropped. Dropping them would
+     * be a quiet behavioural difference between the two engines, and they are a documented gap to be
+     * closed on both at once rather than on whichever one was touched last.
+     */
+    public String augmentToUri(String magnetUrl) {
+        MagnetUri augmented = augment(MagnetUriParser.lenientParser().parse(magnetUrl));
+        StringBuilder uri = new StringBuilder("magnet:?xt=urn:btih:").append(augmented.getTorrentId());
+        augmented.getDisplayName().ifPresent(name -> uri.append("&dn=").append(encode(name)));
+        augmented.getTrackerUrls().forEach(tracker -> uri.append("&tr=").append(encode(tracker)));
+        augmented.getPeerAddresses().forEach(peer -> uri.append("&x.pe=").append(encode(peer.toString())));
+        return uri.toString();
+    }
+
+    private static String encode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
     private boolean isDead(String trackerUrl) {
