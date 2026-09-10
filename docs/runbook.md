@@ -15,48 +15,119 @@ application state.
 > two unrelated top-level directories. Anything still under the old paths is
 > unreachable and can be deleted.
 
+## Reaching the API from somewhere else
+
+The HTTP surface binds to loopback. Two things have to change together to move it,
+and changing only the first is the most likely way to meet a confusing 403:
+
+```yaml
+# 1. where it listens
+#    compose:  WEB_BIND=0.0.0.0 make up
+#    direct:   server.address: 0.0.0.0
+# 2. what it answers to
+aztcast:
+  streaming:
+    web:
+      allowed-hosts: [localhost, 127.0.0.1, "::1", "[::1]", 192.168.2.112]
+```
+
+A request naming a host that is not on that list gets `403` with a
+`host-not-allowed` problem document, and the API logs the host it refused:
+
+```
+Refused a request for Host 'nas.local' — not in allowed-hosts [localhost, 127.0.0.1, ::1, [::1]]
+```
+
+That is the check working. It exists because binding to loopback does not stop a
+browser: a page can rebind its own DNS name to `127.0.0.1` and reach a local service
+as same-origin, and the `Host` header is the one part of that request the page could
+not choose. Setting `allowed-hosts: []` disables it, along with the `Origin` check on
+writes that shares the list.
+
+`Origin` is checked on `POST`, `PUT`, `DELETE` and `PATCH` only, and only when the
+header is present — `curl` and the smoke test send none and are unaffected.
+
 ## Reclaiming disk
 
-Media older than `aztcast.streaming.storage.retention` (default 7d) is deleted
-automatically — a directory is aged by its **newest** file, not its own mtime, so
-an encode running longer than the window cannot have its own output removed
-underneath it. The reaper runs hourly.
+**Nothing deletes a finished video.** The HLS ladder under `hls/` stays until
+someone deletes it, and there is no window, no sweep and nothing to configure
+([ADR-0030](decisions/0030-the-library-is-not-a-cache.md)). If you are looking for
+`aztcast.streaming.storage.retention`, it is gone — see the note at the end of this
+section.
 
-Retention and `aztcast.streaming.redis.job-ttl` are two halves of one number.
-Media outliving its job leaves directories nothing can name; a job outliving its
-media reports READY for a video that is gone. **Change them together.**
-
-**Saved videos are exempt.** A `keep.json` in a video's HLS directory makes the
-reaper skip it, forever, and the library writes one when someone marks a video.
-That breaks the pairing above in the safe direction only — the job record still
-expires, leaving a listed video with no job, which is what every older video looks
-like anyway. It also means the reaper is no longer a guarantee against a full disk:
+Deleting is an API call, and the library's card control is the same call:
 
 ```bash
-# what is being kept, and how much it costs
+curl -X DELETE http://localhost:8000/api/v1/videos/<videoId>
+curl -X DELETE 'http://localhost:8000/api/v1/videos/<videoId>?force=true'   # if it is saved
+```
+
+It takes the ladder, the raw download, the job record and the magnet claim. That
+last one matters: releasing it is what lets the same magnet be added again as a
+fresh ingestion rather than being deduplicated onto the id you just deleted.
+
+A **saved** video (a `keep.json` in its HLS directory, written by the library's
+marker) answers 409 instead, until the request carries `force=true`. The marker
+used to exempt a video from the reaper; with no reaper, that is what it does now.
+
+```bash
+# what is saved, and what it costs
 find /var/lib/aztcast/hls -name keep.json -printf '%h\n' | xargs -r du -sh
 ```
 
-Deleting the marker returns that video to the ordinary schedule. The raw torrent
-under `downloads/` is reaped on schedule whether or not the video is kept.
-
-To reclaim space now, delete a video's directories by hand:
+`rm -rf` on a video's directories still works and is still safe, but prefer the
+endpoint — the shell cannot release the magnet claim, so a video removed that way
+cannot be re-ingested until the claim expires:
 
 ```bash
 docker compose -f deploy/docker-compose.yml exec streaming-api \
   rm -rf /var/lib/aztcast/hls/<videoId> /var/lib/aztcast/downloads/<videoId>
 ```
 
-Both trees are regenerable caches: deleting them costs a re-ingestion, not data —
-with one exception now, which is that a saved video is the only copy of a decision
-someone made, and re-ingesting it will not restore the marker.
+### What still gets cleaned up automatically
+
+Only `downloads/` — the raw torrent, which is a second full copy of a video nobody
+watches and nothing seeds. A verified transcode discards its own source right away,
+so the usual answer is "within minutes of the video becoming playable".
+
+`DownloadReaper` sweeps hourly for the copies that never got that far: a failed
+fetch, a crashed encode, a process killed between the two. Its window is
+`aztcast.streaming.storage.download-retention` (default 24h), and a directory is
+aged by its **newest** file rather than its own mtime, so a download slower than the
+window cannot be deleted out from under the client fetching it.
+
+### Running out of space
+
+Ingestion is refused, as `507`, when the downloads volume has less than
+`aztcast.streaming.storage.min-free-space` (default 2GB) free. Set it to `0` to
+disable the check. Since nothing reclaims space on its own, this is the whole of the
+disk-full defence, and it is deliberately a refusal up front rather than a failure
+two hours into a download.
+
+```bash
+curl -s http://localhost:8000/api/v1/storage
+# {"usableBytes":…,"totalBytes":…,"mediaBytes":…,"videoCount":…,"minFreeBytes":…}
+```
+
+The library's toolbar shows the same numbers, and turns them red as the floor gets
+close. `usableBytes` is `null`, not `0`, when the filesystem could not be read —
+and an unreadable filesystem does not refuse ingestions.
+
+> **Upgrading:** `aztcast.streaming.storage.retention` no longer exists. Spring
+> ignores unknown keys silently, so a configuration that still sets it starts
+> normally and does nothing with it. Replace it with `download-retention`, which
+> governs `downloads/` only. `aztcast.streaming.redis.job-ttl` is unchanged and no
+> longer has to be kept in step with anything — deleting a video now removes its job
+> record directly.
 
 ### Keeping media on the host rather than in a volume
 
 The compose stack puts everything in a named volume, `media`. That survives
-`docker compose down`, but **`docker compose down -v` takes it** — saved videos and
-`providers.db` with it, and `providers.db` is not regenerable. To keep media somewhere
-you can see and back up, bind-mount it instead:
+`docker compose down`, but **`docker compose down -v` takes it** — every video you
+have and `providers.db` with them. That is a much bigger loss than it used to be:
+videos no longer expire, so the volume is now the permanent home of a library rather
+than a week of cache. To keep media somewhere you can see and back up, bind-mount it
+instead:
 
 ```yaml
 # deploy/docker-compose.override.yml
@@ -108,7 +179,9 @@ torrent traffic is confined to one interface; see
 Few peers is a discovery problem: check the swarm is alive, that `6891/tcp` and
 `6891/udp` are published and forwarded (without an inbound port the client is
 outbound-only and loses every peer that is also behind a NAT), and that the tracker
-list is not stale. The base stack publishes that port on `streaming-api`; under the
+list is not stale. This is the one port that is meant to be reachable from the
+internet; everything else this stack publishes is bound to `127.0.0.1`
+([ADR-0031](decisions/0031-only-the-swarm-faces-outward.md)). The base stack publishes that port on `streaming-api`; under the
 VPN overlay it is published on `gluetun` instead, because a container sharing another's
 network namespace cannot publish ports of its own — Docker refuses the pair with
 *"conflicting options: port publishing and the container type network mode"*. Whether

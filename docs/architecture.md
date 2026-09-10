@@ -61,9 +61,10 @@ com.azt.streaming
 │   └── infrastructure/   SqliteProviderPeerRepository, ProviderSchema, GeoIpEnricher
 └── shared/
     ├── config/           StreamingProperties, Async/Redis/RateLimit/Cors/Clock
-    ├── storage/          MediaStorage (port), FileSystemMediaStorage, MediaReaper,
-    │                     VideoCatalog, CatalogEntry, MediaDirectories
+    ├── storage/          MediaStorage (port), FileSystemMediaStorage, DownloadReaper,
+    │                     VideoCatalog, CatalogEntry, MediaDirectories, VolumeSpace
     ├── ratelimit/        RateLimiter (port), RedisTokenBucketRateLimiter, interceptor
+    ├── web/              AllowedHostFilter  (Host allowlist + Origin check on writes)
     └── error/            GlobalExceptionHandler, ProblemTypes
 ```
 
@@ -137,9 +138,14 @@ built on jobs goes empty after a restart with videos still sitting in the HLS ro
 hypothetical: it is the state a `docker compose` box lands in, because Redis runs with `--save ""`.
 
 The one thing the disk cannot supply is a name, so ingestion writes `meta.json` beside the media
-before the transcode starts. It lives inside the video's own directory so the reaper takes both at
+before the transcode starts. It lives inside the video's own directory so a delete takes both at
 once and they cannot drift apart. See
 [ADR-0011](decisions/0011-the-library-replaces-manual-id-entry.md).
+
+Nothing deletes a ladder on a schedule, so "the media outlives its job record" is not an edge case
+here — it is the ordinary state of every video more than a job TTL old
+([ADR-0030](decisions/0030-the-library-is-not-a-cache.md)). Deleting a video removes its job record
+directly, which is what the old retention/TTL pairing was approximating with two clocks.
 
 ## `shared/storage` is the only place that builds a path
 
@@ -505,7 +511,15 @@ A mismatch in any of them is a silent 404 on every segment.
 ## Known gaps
 
 - **No authentication.** Anyone who can reach the API can make the server
-  download arbitrary torrents.
+  download arbitrary torrents. The surface binds to loopback and checks `Host`
+  and `Origin`, which bounds who "anyone" is without changing what they can do
+  ([ADR-0031](decisions/0031-only-the-swarm-faces-outward.md)).
+- **The magnet is barely validated.** `@NotBlank` and nothing else, so a caller
+  can hand the engine a `&x.pe=` peer address pointing at loopback or a private
+  range, and `&tr=` trackers are filtered by denylist rather than allowlist.
+- **The disk can fill.** Nothing deletes a finished video, by design. Ingestion is
+  refused below a free-space floor, which turns a full disk into a refusal rather
+  than a half-written encode, but nothing reclaims space on its own.
 - **Job state is in memory** when `aztcast.streaming.redis.enabled` is false
   (the default), and lost on restart. With Redis it survives — see
   [ADR-0009](decisions/0009-redis-for-state-not-for-media.md).
