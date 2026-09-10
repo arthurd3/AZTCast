@@ -70,8 +70,16 @@ services:
       # the only writer.
       - media:/var/lib/aztcast:ro
     ports:
+      # Loopback, deliberately. This stack has no authentication, and the surface that
+      # has to face the world -- the torrent port above -- is not this one. Published on
+      # 0.0.0.0 the player and the API are reachable by anything on the same network, and
+      # a published Docker port is not covered by ufw or firewalld: Docker writes its own
+      # iptables rules ahead of theirs, so a host firewall you believed was closed is not.
+      #
       # Override with WEB_PORT if 8000 is taken:  WEB_PORT=8100 docker compose ... up
-      - "${WEB_PORT:-8000}:80"
+      # Serve the LAN with WEB_BIND=0.0.0.0, and add the address you reach it on to
+      # aztcast.streaming.web.allowed-hosts, or the Host check will refuse the request.
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8000}:80"
     depends_on:
       streaming-api:
         condition: service_healthy

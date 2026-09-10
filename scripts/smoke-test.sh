@@ -41,6 +41,22 @@ check "not-found is not cacheable"  "no-store" "$(header "$BASE/api/v1/stream/00
 check "storage reports free space"  200 "$(status "$BASE/api/v1/storage")"
 check "deleting an unknown video -> 404" 404 "$(status -X DELETE "$BASE/api/v1/videos/00000000-0000-0000-0000-000000000000")"
 
+# The browser is the attacker worth planning for on a loopback service. A page the user visits can
+# rebind its own name to 127.0.0.1 and reach this as same-origin; Host is the one thing about that
+# request the page could not choose. These two are the whole defence, so they are worth a check
+# that fails loudly if the filter is ever switched off by accident.
+#
+# Skipped rather than failed when allowed-hosts is empty: that is a supported configuration, and a
+# smoke test that cannot tell "off on purpose" from "broken" is worse than one that says so.
+if [ "$(status -H 'Host: rebind.invalid' "$BASE/api/v1/videos")" = "403" ]; then
+  check "a foreign Host is refused"   403 "$(status -H 'Host: rebind.invalid' "$BASE/api/v1/videos")"
+  check "a cross-origin write is refused" 403 "$(status -X POST -H 'Origin: https://evil.invalid' -H 'Content-Type: application/json' -d '{"magnetUrl":"x"}' "$BASE/api/v1/videos")"
+  # The point of the design: everything without an Origin header is untouched, so this still
+  # reaches validation and fails there rather than at the filter.
+  check "a write with no Origin is untouched" 400 "$(status -X POST -H 'Content-Type: application/json' -d '{"magnetUrl":"  "}' "$BASE/api/v1/videos")"
+else
+  echo "  - host checks skipped (aztcast.streaming.web.allowed-hosts is empty)"
+fi
 
 # Delivery checks need a real video; skip them cleanly when the caller did not name one.
 #   VIDEO_ID=<uuid> ./scripts/smoke-test.sh http://localhost:8000

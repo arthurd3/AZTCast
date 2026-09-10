@@ -14,6 +14,12 @@ server:
   # Behind nginx, getRemoteAddr() returns the nginx container's address, so without this
   # every client shares one rate-limit bucket and the per-IP limit is silently a global one.
   forward-headers-strategy: framework
+  # All interfaces, overriding the loopback default -- and this is not a weakening. The
+  # container's own network namespace is the boundary here: 8080 is never published to the
+  # host (see deploy/docker-compose.yml), so the only thing that can reach it is nginx on
+  # the compose network. Binding loopback inside the container would hide the API from
+  # nginx and break the stack, not harden it.
+  address: 0.0.0.0
 
 aztcast:
   streaming:
@@ -57,3 +63,8 @@ aztcast:
 
     web:
       allowed-origins: []
+      # The browser reaches nginx on localhost:8000 and nginx forwards Host unchanged, so
+      # the value arriving here is whatever was typed in the address bar. Add the name you
+      # use if it is not one of these -- a LAN address or a hostname will be refused
+      # otherwise, which is the check working rather than a misconfiguration.
+      allowed-hosts: [localhost, 127.0.0.1, "::1", "[::1]"]

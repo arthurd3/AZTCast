@@ -402,5 +402,19 @@ public record StreamingProperties(
      * CORS origins. Empty is the correct production value: nginx reverse-proxies {@code /api} onto
      * the same origin that serves the player, so no cross-origin request is ever made.
      */
-    public record Web(@NotNull List<String> allowedOrigins) {}
+    /**
+     * What the HTTP surface will answer to.
+     *
+     * <p>{@code allowedOrigins} is CORS: which other origins a browser may read a response from.
+     * Empty switches it off, which is the shipped default because nginx puts the player and the API
+     * on one origin.
+     *
+     * <p>{@code allowedHosts} is a different question that looks like the same one — which values of
+     * the {@code Host} header this service accepts at all. It exists because binding to loopback is
+     * not the boundary it appears to be: DNS rebinding lets a page the user visits reach
+     * {@code 127.0.0.1} as same-origin, and at that point CORS has already been satisfied. The name
+     * is the attacker's to choose and the value we agreed to answer to is not, so checking it is
+     * what closes the gap. Empty disables the check, on the same terms as {@code allowedOrigins}.
+     */
+    public record Web(@NotNull List<String> allowedOrigins, @NotNull List<String> allowedHosts) {}
 }

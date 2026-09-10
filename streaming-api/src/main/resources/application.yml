@@ -5,6 +5,15 @@ spring:
 server:
   port: 8080
   shutdown: graceful
+  # Loopback, deliberately. This runs on the machine of the person using it, and the
+  # only thing here that has any business facing the internet is the BitTorrent port --
+  # peers cannot reach you otherwise. The HTTP API has the opposite need: nobody outside
+  # this host should be able to reach an interface that downloads torrents on request.
+  #
+  # Set to 0.0.0.0 to serve the LAN, and add whatever address you reach it on to
+  # aztcast.streaming.web.allowed-hosts, or the Host check below will refuse it.
+  # The docker profile already does both -- see application-docker.yml.
+  address: 127.0.0.1
 
 management:
   endpoints:
@@ -307,6 +316,15 @@ aztcast:
     web:
       # Empty in production: nginx makes the player and the API same-origin.
       allowed-origins: []
+      # Host header allowlist. Binding to loopback is not the boundary it looks like:
+      # a page you visit can rebind its own DNS name to 127.0.0.1 once the browser has
+      # cached the origin, and then talk to this API as same-origin. Checking Host is
+      # the server-side half that stops it -- the attacker controls the name, not the
+      # value we agreed to answer to. Same class of bug as Transmission's RPC.
+      #
+      # Add the hostname you actually reach this on if it is not one of these. Empty
+      # disables the check, the same way an empty allowed-origins disables CORS.
+      allowed-hosts: [localhost, 127.0.0.1, "::1", "[::1]"]
 
 logging:
   level:

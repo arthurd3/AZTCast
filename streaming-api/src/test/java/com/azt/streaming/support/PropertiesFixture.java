@@ -32,6 +32,7 @@ public final class PropertiesFixture {
         private Path hlsDir = Path.of("target/test/hls");
         private Duration downloadRetention = Duration.ofHours(24);
         private DataSize minFreeSpace = DataSize.ofBytes(0);
+        private List<String> allowedHosts = List.of();
         private String binary = "/bin/true";
         private String probeBinary = "/bin/true";
         private String videoCodec = "libx264";
@@ -168,6 +169,10 @@ public final class PropertiesFixture {
             return this;
         }
 
+        public Builder allowedHosts(String... values) {
+            this.allowedHosts = List.of(values);
+            return this;
+        }
 
         public StreamingProperties build() {
             return new StreamingProperties(
@@ -219,7 +224,7 @@ public final class PropertiesFixture {
                             new StreamingProperties.Redis.RateLimit(rateLimitCapacity, 20)),
                     new StreamingProperties.Providers(
                             false, java.nio.file.Path.of("providers.db"), "", "", Duration.ofDays(30), 1000),
-                    new StreamingProperties.Web(List.of()));
+                    new StreamingProperties.Web(List.of(), allowedHosts));
         }
     }
 }

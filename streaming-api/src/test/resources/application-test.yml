@@ -38,3 +38,5 @@ aztcast:
         refill-per-hour: 20
     web:
       allowed-origins: []
+      # Off by default in tests; the slices that exercise it set it explicitly.
+      allowed-hosts: []
