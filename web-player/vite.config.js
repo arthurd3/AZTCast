@@ -30,6 +30,7 @@ export default defineConfig({
         player: resolve(import.meta.dirname, 'player.html'),
         diagnostics: resolve(import.meta.dirname, 'diagnostics.html'),
         providers: resolve(import.meta.dirname, 'providers.html'),
+        localizacao: resolve(import.meta.dirname, 'localizacao.html'),
       },
       output: {
         // hls.js is ~575 kB and both pages use it. Give it its own named chunk so the

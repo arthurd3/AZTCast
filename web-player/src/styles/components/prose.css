@@ -1,0 +1,112 @@
+/*
+ * Long-form prose, for the pages that are text rather than interface.
+ *
+ * The other pages carry their measure as an inline style on a single lede paragraph. That does
+ * not scale to a page of nine sections: without a class here, either every element gets its own
+ * inline style or the copy runs the full 1440px of --content-width, which is unreadable.
+ *
+ * Note the list rules. reset.css strips list-style and padding from every ol and ul, which is
+ * right for the navigation and card lists everywhere else and wrong here — a bulleted list is
+ * the point of a bulleted list. This is the one place that puts the markers back.
+ */
+@layer components {
+  .prose {
+    max-width: 68ch;
+    margin-top: var(--space-5);
+  }
+
+  .prose > * + * {
+    margin-top: var(--space-4);
+  }
+
+  .prose h2 {
+    margin-top: var(--space-7);
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    line-height: var(--leading-tight);
+    color: var(--text);
+  }
+
+  .prose h3 {
+    margin-top: var(--space-5);
+    font-family: var(--font-display);
+    font-size: var(--text-base);
+    color: var(--text);
+  }
+
+  .prose p,
+  .prose li {
+    color: var(--text-muted);
+    line-height: var(--leading-normal);
+  }
+
+  .prose ul {
+    padding-inline-start: var(--space-5);
+    list-style: disc;
+  }
+
+  .prose li + li {
+    margin-top: var(--space-2);
+  }
+
+  .prose li::marker {
+    color: var(--text-dim);
+  }
+
+  .prose code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    color: var(--accent);
+  }
+
+  /*
+   * A figure for the numbers that would otherwise be lost inside a paragraph. It is a ul, so it
+   * has to out-specify the `.prose ul` rule above that puts the markers back — a marker beside a
+   * card reads as a bullet the card forgot to hide. Two columns at this measure, not three and a
+   * stranded fourth.
+   */
+  .prose ul.prose__figures {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: var(--space-3);
+    padding-inline-start: 0;
+    list-style: none;
+  }
+
+  .prose__figures li + li {
+    margin-top: 0;
+  }
+
+  .prose__figures li {
+    padding: var(--space-4);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    background: var(--glass-bg);
+  }
+
+  .prose__figure {
+    display: block;
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    color: var(--text);
+  }
+
+  .prose__figure-label {
+    display: block;
+    margin-top: var(--space-1);
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  /* The honest note a section cannot end without. */
+  .prose__caveat {
+    padding: var(--space-4);
+    border-left: 2px solid color-mix(in oklab, var(--warn) 60%, transparent);
+    border-radius: var(--radius-xs);
+    background: var(--warn-quiet);
+    color: var(--text);
+    font-size: var(--text-sm);
+  }
+}
