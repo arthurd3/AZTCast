@@ -68,11 +68,25 @@ public record StreamingProperties(
             @Positive int videoBitrateKbps,
             @Positive int audioBitrateKbps) {}
 
-    /** BitTorrent acquisition limits. */
+    /**
+     * BitTorrent acquisition limits.
+     *
+     * @param extraTrackers announce URLs added to every magnet, on top of whatever it already
+     *     carries. A magnet often arrives with no {@code &tr=} at all, or with trackers that died
+     *     years ago, leaving DHT and PEX to find the whole swarm by themselves. The defaults are a
+     *     snapshot of a public list rather than a live fetch: looking one up per ingestion would send
+     *     a request naming what is about to be downloaded, which is the kind of leak ADR-0016
+     *     already refuses elsewhere. Empty disables the whole mechanism.
+     * @param downloadVideoOnly skip every file in the torrent except the video that will actually be
+     *     transcoded. A season pack is ten episodes of which this pipeline uses one, so the default
+     *     behaviour spends nine tenths of the bandwidth on files it then deletes unread.
+     */
     public record Torrent(
             @NotEmpty List<String> videoExtensions,
             @NotNull Duration downloadTimeout,
             @NotNull Duration progressLogInterval,
+            @NotNull List<String> extraTrackers,
+            boolean downloadVideoOnly,
             @NestedConfigurationProperty @Valid @NotNull Network network) {}
 
     /**
@@ -102,7 +116,21 @@ public record StreamingProperties(
      *     one knob here that genuinely affects which address peers see, because the library binds
      *     outgoing connections to it as well as the listening socket.
      * @param acceptorPort the TCP port for incoming peer connections.
-     * @param maxPeerConnectionsPerTorrent ceiling on simultaneous peers for one torrent.
+     * @param maxPeerConnectionsPerTorrent ceiling on simultaneous peers for one torrent. A
+     *     <em>connection</em> ceiling, which is not the same thing as a transfer ceiling — see
+     *     {@code maxActivePeerConnectionsPerTorrent}, which is the one that governs speed.
+     * @param maxActivePeerConnectionsPerTorrent how many of those connections may be assigned pieces
+     *     at once. The library defaults this to 10 and it is the real throughput ceiling: raising
+     *     {@code maxPeerConnectionsPerTorrent} alone buys established connections that sit idle. It
+     *     costs no memory to raise, because the per-connection buffers are already allocated.
+     * @param maxPeerConnections ceiling across every torrent at once. One runtime is shared by all
+     *     downloads, so this is what two concurrent ingestions actually compete for; keep it above
+     *     the per-torrent ceiling or the second ingestion starves.
+     * @param maxPendingConnectionRequests how many connections may be in the process of being opened.
+     *     Governs how fast the swarm is populated, not how large it gets.
+     * @param peersPerTrackerRequest how many peers to ask each tracker for per announce.
+     * @param maxIoQueueSize ceiling on blocks waiting to be written to disk. The library leaves this
+     *     unbounded, which means a slow disk backs up in heap with nothing to stop it.
      */
     public record Network(
             @NotNull Encryption encryption,
@@ -110,7 +138,12 @@ public record StreamingProperties(
             boolean disablePeerExchange,
             String acceptorAddress,
             @Positive int acceptorPort,
-            @Positive int maxPeerConnectionsPerTorrent) {}
+            @Positive int maxPeerConnectionsPerTorrent,
+            @Positive int maxActivePeerConnectionsPerTorrent,
+            @Positive int maxPeerConnections,
+            @Positive int maxPendingConnectionRequests,
+            @Positive int peersPerTrackerRequest,
+            @Positive int maxIoQueueSize) {}
 
     /**
      * Message-stream encryption policy, named to match the library's four values.

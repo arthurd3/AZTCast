@@ -3,17 +3,18 @@ package com.azt.streaming.acquisition.infrastructure;
 import bt.Bt;
 import bt.data.Storage;
 import bt.data.file.FileSystemStorage;
+import bt.magnet.MagnetUri;
 import bt.magnet.MagnetUriParser;
 import bt.metainfo.TorrentId;
 import bt.runtime.BtClient;
 import bt.runtime.BtRuntime;
 import bt.torrent.TorrentSessionState;
-import bt.torrent.selector.SequentialSelector;
 import com.azt.streaming.acquisition.domain.TorrentDownloadException;
 import com.azt.streaming.acquisition.domain.TorrentDownloader;
 import com.azt.streaming.shared.config.StreamingProperties;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -47,19 +48,26 @@ public class BtTorrentDownloader implements TorrentDownloader {
     private final BtRuntime runtime;
     private final PeerEventRecorder peerEvents;
     private final VideoFileLocator videoFileLocator;
+    private final MagnetTrackerInjector trackerInjector;
     private final Duration downloadTimeout;
     private final Duration progressLogInterval;
+    private final List<String> videoExtensions;
+    private final boolean downloadVideoOnly;
 
     public BtTorrentDownloader(
             BtRuntime btRuntime,
             PeerEventRecorder peerEvents,
             VideoFileLocator videoFileLocator,
+            MagnetTrackerInjector trackerInjector,
             StreamingProperties properties) {
         this.runtime = btRuntime;
         this.peerEvents = peerEvents;
         this.videoFileLocator = videoFileLocator;
+        this.trackerInjector = trackerInjector;
         this.downloadTimeout = properties.torrent().downloadTimeout();
         this.progressLogInterval = properties.torrent().progressLogInterval();
+        this.videoExtensions = properties.torrent().videoExtensions();
+        this.downloadVideoOnly = properties.torrent().downloadVideoOnly();
     }
 
     @Override
@@ -75,19 +83,33 @@ public class BtTorrentDownloader implements TorrentDownloader {
         // arrives, and attributing them needs the torrent's identity from the first event onward.
         // Lenient, because the parser this uses is stricter about tracker lists than the swarm is,
         // and a magnet that downloads fine should not lose its peer log to a pedantic parse.
-        final TorrentId torrentId = MagnetUriParser.lenientParser().parse(magnetUrl).getTorrentId();
+        final MagnetUri parsed = MagnetUriParser.lenientParser().parse(magnetUrl);
+        final TorrentId torrentId = parsed.getTorrentId();
         peerEvents.track(torrentId, videoId);
 
         // Attached to the shared runtime rather than standing up its own. Config, DHT and the
         // extension switches all belong to the runtime now; what is left here is per-torrent.
-        final BtClient client =
-                Bt.client(runtime)
-                        .storage(storage)
-                        .magnet(magnetUrl)
-                        // Sequential pieces so playback can start before the whole file lands.
-                        .selector(SequentialSelector.sequential())
-                        .stopWhenDownloaded()
-                        .build();
+        var builder = Bt.client(runtime)
+                .storage(storage)
+                // Augmented, not the raw string: a magnet with no trackers of its own leaves DHT to
+                // find the swarm unaided, which is the slowest way to start a download.
+                .magnet(trackerInjector.augment(parsed))
+                // Rarest-first, not sequential. Sequential only pays for itself when something
+                // consumes partial data, and onSessionState waits for getPiecesRemaining() == 0 —
+                // so the throughput was being spent and the benefit never collected. Rarest-first
+                // also avoids the endgame stall, where the last piece is held by one slow peer.
+                .randomizedRarestSelector()
+                .stopWhenDownloaded();
+
+        if (downloadVideoOnly) {
+            // One selector per download, because it holds the choice it made for this torrent.
+            // afterTorrentFetched is how it learns the file list: the library asks prioritize()
+            // about one file at a time, and "largest" is not a per-file fact.
+            LargestVideoFileSelector fileSelector = new LargestVideoFileSelector(videoExtensions);
+            builder = builder.afterTorrentFetched(fileSelector::prime).fileSelector(fileSelector);
+        }
+
+        final BtClient client = builder.build();
 
         // The client used to be built, started and then forgotten: a stalled or failed torrent
         // leaked its threads and sockets for the lifetime of the JVM. Releasing it from
@@ -108,7 +130,8 @@ public class BtTorrentDownloader implements TorrentDownloader {
                 onProgress,
                 new AtomicInteger(-1),
                 new AtomicLong(System.nanoTime()),
-                new AtomicLong(System.nanoTime()));
+                new AtomicLong(System.nanoTime()),
+                new AtomicLong(0));
 
         client.startAsync(
                 state -> onSessionState(state, result, torrentId, magnetUrl, targetDirectory, progress),
@@ -129,7 +152,7 @@ public class BtTorrentDownloader implements TorrentDownloader {
         if (state.getPiecesRemaining() != 0) {
             reportProgress(state, result, progress);
             sampleTransfersOccasionally(state, torrentId, progress.lastSampleNanos());
-            logProgressOccasionally(state, magnetUrl, progress.lastLogNanos());
+            logProgressOccasionally(state, magnetUrl, progress);
             return;
         }
 
@@ -194,28 +217,72 @@ public class BtTorrentDownloader implements TorrentDownloader {
 
     /** Per-download progress bookkeeping: where to publish, and what has been published already. */
     private record Progress(
-            IntConsumer sink, AtomicInteger lastPercent, AtomicLong lastLogNanos, AtomicLong lastSampleNanos) {}
+            IntConsumer sink,
+            AtomicInteger lastPercent,
+            AtomicLong lastLogNanos,
+            AtomicLong lastSampleNanos,
+            AtomicLong lastLoggedBytes) {}
 
-    private void logProgressOccasionally(
-            TorrentSessionState state, String magnetUrl, AtomicLong lastProgressLogNanos) {
-        if (!due(lastProgressLogNanos, progressLogInterval)) {
+    /**
+     * The periodic progress line, with the two numbers that say whether the swarm is healthy.
+     *
+     * <p>Peer count and transfer rate are here rather than in a metric because the question they
+     * answer — did raising the active-connection ceiling actually do anything — is asked by reading
+     * one download's log, not by querying a time series. A percentage alone cannot distinguish a
+     * torrent that is slow from a torrent that has found nobody to talk to.
+     *
+     * <p>Does its own timing rather than calling {@code due}, because the rate needs the length of
+     * the interval that the CAS in there consumes.
+     */
+    private void logProgressOccasionally(TorrentSessionState state, String magnetUrl, Progress progress) {
+        long now = System.nanoTime();
+        long previous = progress.lastLogNanos().get();
+        long elapsedNanos = now - previous;
+        if (elapsedNanos < progressLogInterval.toNanos()
+                || !progress.lastLogNanos().compareAndSet(previous, now)) {
             return;
         }
-        log.info("Progress {}% for magnet {}", String.format("%.1f", progressPercent(state)), magnetUrl);
+
+        // Cumulative and non-destructive: the library sums live connections and adds what
+        // disconnected ones left behind, so reading it twice does not consume anything.
+        long downloaded = state.getDownloaded();
+        long sinceLastLog = downloaded - progress.lastLoggedBytes().getAndSet(downloaded);
+
+        log.info(
+                "Progress {}% for magnet {} - {} peers, {}",
+                String.format("%.1f", progressPercent(state)),
+                magnetUrl,
+                state.getConnectedPeers().size(),
+                rate(sinceLastLog, elapsedNanos));
+    }
+
+    /** Transfer rate over one logging interval, for a human reading the log. */
+    private static String rate(long bytes, long elapsedNanos) {
+        if (elapsedNanos <= 0 || bytes < 0) {
+            return "rate unknown";
+        }
+        double bytesPerSecond = bytes / (elapsedNanos / 1_000_000_000.0);
+        return String.format("%.2f MiB/s", bytesPerSecond / (1024 * 1024));
     }
 
     /**
-     * Percentage of pieces downloaded.
+     * Percentage of the pieces this download actually wants.
      *
-     * <p>The zero check is load-bearing: before torrent metadata arrives {@code getPiecesTotal()} is
-     * 0, and the previous version divided by it on every poll.
+     * <p>{@code getPiecesNotSkipped()}, not {@code getPiecesTotal()}, and the distinction became
+     * load-bearing the moment a file selector was wired in. The library counts a skipped piece as
+     * one that no longer has to arrive — {@code getPiecesRemaining()} unions the skipped bitmask
+     * with the completed one — so against the full total, a season pack with nine episodes skipped
+     * would open at 90% and creep to 100.
+     *
+     * <p>The zero check is load-bearing too: before torrent metadata arrives there are no pieces at
+     * all, and the original version divided by that on every poll.
      */
     private static double progressPercent(TorrentSessionState state) {
-        int total = state.getPiecesTotal();
-        if (total <= 0) {
+        int wanted = state.getPiecesNotSkipped();
+        if (wanted <= 0 || state.getPiecesTotal() <= 0) {
             return 0.0;
         }
-        return (double) (total - state.getPiecesRemaining()) / total * 100.0;
+        return (double) (wanted - state.getPiecesRemaining()) / wanted * 100.0;
     }
 
     private static void stopQuietly(BtClient client, String magnetUrl) {

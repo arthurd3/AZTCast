@@ -27,6 +27,8 @@ public final class PropertiesFixture {
         private Duration segmentDuration = Duration.ofSeconds(4);
         private List<StreamingProperties.Rendition> renditions = List.of(RENDITION_720P, RENDITION_240P);
         private List<String> videoExtensions = List.of("mp4", "mkv");
+        private List<String> extraTrackers = List.of();
+        private boolean downloadVideoOnly = true;
         private boolean offloadEnabled = false;
         private String internalPrefix = "/_media";
         private boolean redisEnabled = false;
@@ -62,6 +64,16 @@ public final class PropertiesFixture {
             return this;
         }
 
+        public Builder extraTrackers(List<String> value) {
+            this.extraTrackers = value;
+            return this;
+        }
+
+        public Builder downloadVideoOnly(boolean value) {
+            this.downloadVideoOnly = value;
+            return this;
+        }
+
         public Builder offloadEnabled(boolean value) {
             this.offloadEnabled = value;
             return this;
@@ -91,8 +103,20 @@ public final class PropertiesFixture {
                             videoExtensions,
                             Duration.ofSeconds(30),
                             Duration.ofSeconds(1),
+                            extraTrackers,
+                            downloadVideoOnly,
                             new StreamingProperties.Network(
-                                    StreamingProperties.Encryption.PREFER_ENCRYPTED, true, false, "", 6891, 200)),
+                                    StreamingProperties.Encryption.PREFER_ENCRYPTED,
+                                    true,
+                                    false,
+                                    "",
+                                    6891,
+                                    200,
+                                    60,
+                                    600,
+                                    200,
+                                    200,
+                                    2048)),
                     new StreamingProperties.Transcoding(
                             new StreamingProperties.Transcoding.Pool(1, 1, 10, "test-")),
                     new StreamingProperties.Playback(offloadEnabled, internalPrefix),

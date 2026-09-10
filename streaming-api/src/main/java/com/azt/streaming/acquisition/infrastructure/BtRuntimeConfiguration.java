@@ -60,13 +60,22 @@ public class BtRuntimeConfiguration {
             builder.disablePeerExchange();
         }
 
+        // Every number that governs throughput, on one line. Without it there is no way to tell a
+        // tuned runtime from a defaulted one except by watching a download and guessing.
         log.info(
-                "BitTorrent runtime: port={} encryption={} lsd={} pex={} bind={}",
+                "BitTorrent runtime: port={} encryption={} lsd={} pex={} bind={}"
+                        + " peers={}/torrent ({} active, {} global) pending={} trackerBatch={} ioQueue={}",
                 btConfig.getAcceptorPort(),
                 btConfig.getEncryptionPolicy(),
                 network.disableLocalServiceDiscovery() ? "off" : "on",
                 network.disablePeerExchange() ? "off" : "on",
-                btConfig.getAcceptorAddress());
+                btConfig.getAcceptorAddress(),
+                btConfig.getMaxPeerConnectionsPerTorrent(),
+                btConfig.getMaxConcurrentlyActivePeerConnectionsPerTorrent(),
+                btConfig.getMaxPeerConnections(),
+                btConfig.getMaxPendingConnectionRequests(),
+                btConfig.getNumberOfPeersToRequestFromTracker(),
+                btConfig.getMaxIOQueueSize());
 
         return builder.build();
     }
@@ -79,7 +88,10 @@ public class BtRuntimeConfiguration {
                 new Config() {
                     @Override
                     public int getNumOfHashingThreads() {
-                        return Runtime.getRuntime().availableProcessors() * 2;
+                        // One per core, not two. Hash verification is a burst at the end of a piece,
+                        // not a continuous load, and this pool competes with ffmpeg for the same
+                        // cores — oversubscribing it slows the encode without speeding the download.
+                        return Runtime.getRuntime().availableProcessors();
                     }
                 };
 
@@ -87,6 +99,16 @@ public class BtRuntimeConfiguration {
         config.setEncryptionPolicy(EncryptionPolicy.valueOf(network.encryption().name()));
         config.setAcceptorPort(network.acceptorPort());
         config.setMaxPeerConnectionsPerTorrent(network.maxPeerConnectionsPerTorrent());
+
+        // The throughput ceiling, and the reason a 200-peer setting used to behave like a 10-peer
+        // one: the library assigns pieces to at most this many connections at a time and leaves the
+        // rest established but idle. It defaults to 10.
+        config.setMaxConcurrentlyActivePeerConnectionsPerTorrent(network.maxActivePeerConnectionsPerTorrent());
+        config.setMaxPeerConnections(network.maxPeerConnections());
+        config.setMaxPendingConnectionRequests(network.maxPendingConnectionRequests());
+        config.setNumberOfPeersToRequestFromTracker(network.peersPerTrackerRequest());
+        config.setMaxIOQueueSize(network.maxIoQueueSize());
+
         bindAddress(network.acceptorAddress()).ifPresent(config::setAcceptorAddress);
 
         return config;

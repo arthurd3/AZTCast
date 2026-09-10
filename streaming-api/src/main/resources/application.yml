@@ -75,6 +75,34 @@ aztcast:
       download-timeout: 2h
       progress-log-interval: 5s
 
+      # Only fetch the file that will actually be transcoded. This pipeline picks the
+      # largest video in the torrent and ignores the rest, so a season pack used to
+      # spend nine tenths of its bandwidth on episodes nobody would ever be served.
+      download-video-only: true
+
+      # Announce URLs added to every magnet, on top of whatever it carries. Plenty of
+      # magnets arrive with no &tr= at all and leave DHT to find the swarm alone, which
+      # is slow to start and worse on a thin torrent.
+      #
+      # A snapshot, deliberately, not a live fetch: asking a remote list for trackers at
+      # ingestion time would send a request timed to what is about to be downloaded, and
+      # ADR-0016 already refuses that trade elsewhere. Refresh it by hand from
+      # https://github.com/ngosang/trackerslist (trackers_best.txt) — see docs/runbook.md.
+      #
+      # All UDP: bt-core registers a UDP tracker factory (BEP-15), so these do announce
+      # despite only the HTTP tracker client appearing in pom.xml.
+      extra-trackers:
+        - udp://tracker.opentrackr.org:1337/announce
+        - udp://open.demonii.com:1337/announce
+        - udp://open.stealth.si:80/announce
+        - udp://exodus.desync.com:6969/announce
+        - udp://explodie.org:6969/announce
+        - udp://tracker.dler.org:6969/announce
+        - udp://tracker.qu.ax:6969/announce
+        - udp://tracker.therarbg.to:6969/announce
+        - udp://tracker.farted.net:6969/announce
+        - udp://zer0day.ch:1337/announce
+
       # How the client presents itself to the swarm. None of this is anonymity:
       # BitTorrent announces to the tracker and dials every peer directly, and the
       # library has no proxy support to bolt on. Hiding the origin address is the
@@ -94,7 +122,24 @@ aztcast:
         # connections too, not just the listening socket.
         acceptor-address: ""
         acceptor-port: 6891
+        # A ceiling on established connections, which is not the same as a ceiling on
+        # transfer. Stays at 200 because each connection costs a 1 MiB network buffer.
         max-peer-connections-per-torrent: 200
+        # This is the one that governs speed. The library defaults it to 10: only that
+        # many connections are ever assigned pieces, so the 200 above bought peers that
+        # sat idle. Raising it costs no memory, because those buffers already exist.
+        max-active-peer-connections-per-torrent: 60
+        # Global, across every torrent. One runtime is shared by all downloads, so this
+        # is what concurrent ingestions compete for; above the per-torrent ceiling so
+        # the second one does not starve.
+        max-peer-connections: 600
+        # How many connections may be opening at once. Governs how fast the swarm fills,
+        # not how large it gets.
+        max-pending-connection-requests: 200
+        peers-per-tracker-request: 200
+        # Unbounded in the library, which lets a slow disk back up in heap with nothing
+        # to stop it. At 16 KiB a block this caps that backlog around 32 MiB.
+        max-io-queue-size: 2048
 
     # Who served each torrent. Off by default: it records peer addresses, which are
     # personal data, and that should be a choice rather than a side effect of upgrading.
