@@ -45,6 +45,7 @@ class StreamJobSerializationTest {
                         "videoId",
                         "status",
                         "progressPercent",
+                        "transcodePercent",
                         "magnetUrl",
                         "failureReason",
                         "createdAt",

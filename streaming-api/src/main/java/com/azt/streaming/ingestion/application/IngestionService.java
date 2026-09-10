@@ -121,7 +121,8 @@ public class IngestionService {
                             // Recorded here, before the transcode, so the sidecar is already in place
                             // when master.m3u8 lands and the video becomes listable.
                             videoCatalog.record(videoId, videoFile.getFileName().toString());
-                            return mediaTranscoder.transcodeToHls(videoFile, videoId);
+                            return mediaTranscoder.transcodeToHls(
+                                    videoFile, videoId, percent -> recordTranscodeProgress(videoId, percent));
                         })
                 .whenComplete(
                         (ignored, error) -> {
@@ -160,6 +161,22 @@ public class IngestionService {
                 .filter(current -> current.status() == StreamJobStatus.DOWNLOADING)
                 .filter(current -> current.progressPercent() != percent)
                 .ifPresent(current -> jobRepository.save(current.withProgress(percent, clock.instant())));
+    }
+
+    /**
+     * Writes an encode percentage onto the job, if it is still transcoding.
+     *
+     * <p>Same shape as {@link #recordProgress} and for the same reasons, against a different field.
+     * The status filter matters more here: this is called from ffmpeg's output-drain thread, which
+     * outlives the process by however long the pipe takes to close, so a final tick can land after
+     * the job has already been marked READY.
+     */
+    private void recordTranscodeProgress(String videoId, int percent) {
+        jobRepository
+                .findById(videoId)
+                .filter(current -> current.status() == StreamJobStatus.TRANSCODING)
+                .filter(current -> current.transcodePercent() == null || current.transcodePercent() != percent)
+                .ifPresent(current -> jobRepository.save(current.withTranscodeProgress(percent, clock.instant())));
     }
 
     /**

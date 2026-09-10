@@ -96,7 +96,7 @@ class IngestionServiceTest {
         CompletableFuture<Void> transcode = new CompletableFuture<>();
         given(torrentDownloader.download(any(), any(), any(), any()))
                 .willReturn(CompletableFuture.completedFuture(VIDEO_FILE));
-        given(mediaTranscoder.transcodeToHls(any(), any())).willReturn(transcode);
+        given(mediaTranscoder.transcodeToHls(any(), any(), any())).willReturn(transcode);
 
         String videoId = service.startIngestion(MAGNET).videoId();
 
@@ -114,7 +114,7 @@ class IngestionServiceTest {
         // the download directory — so it has to be captured while the path is still in hand.
         given(torrentDownloader.download(any(), any(), any(), any()))
                 .willReturn(CompletableFuture.completedFuture(VIDEO_FILE));
-        given(mediaTranscoder.transcodeToHls(any(), any())).willReturn(new CompletableFuture<>());
+        given(mediaTranscoder.transcodeToHls(any(), any(), any())).willReturn(new CompletableFuture<>());
 
         String videoId = service.startIngestion(MAGNET).videoId();
 
@@ -125,7 +125,7 @@ class IngestionServiceTest {
     void recordsTranscodingFailuresThatUsedToVanish() {
         given(torrentDownloader.download(any(), any(), any(), any()))
                 .willReturn(CompletableFuture.completedFuture(VIDEO_FILE));
-        given(mediaTranscoder.transcodeToHls(any(), any()))
+        given(mediaTranscoder.transcodeToHls(any(), any(), any()))
                 .willReturn(
                         CompletableFuture.failedFuture(new TranscodingException("ffmpeg exited with code 1")));
 
@@ -151,7 +151,7 @@ class IngestionServiceTest {
     void exposesTheStreamUrlOnlyWhenReady() {
         given(torrentDownloader.download(any(), any(), any(), any()))
                 .willReturn(CompletableFuture.completedFuture(VIDEO_FILE));
-        given(mediaTranscoder.transcodeToHls(any(), any()))
+        given(mediaTranscoder.transcodeToHls(any(), any(), any()))
                 .willReturn(CompletableFuture.completedFuture(null));
 
         String videoId = service.startIngestion(MAGNET).videoId();
@@ -185,7 +185,7 @@ class IngestionServiceTest {
         // for the whole of a transcode that is already running.
         given(torrentDownloader.download(any(), any(), any(), any()))
                 .willReturn(CompletableFuture.completedFuture(VIDEO_FILE));
-        given(mediaTranscoder.transcodeToHls(any(), any())).willReturn(new CompletableFuture<>());
+        given(mediaTranscoder.transcodeToHls(any(), any(), any())).willReturn(new CompletableFuture<>());
 
         String videoId = service.startIngestion(MAGNET).videoId();
         progressSink().accept(99);
@@ -215,7 +215,7 @@ class IngestionServiceTest {
         given(torrentDownloader.download(any(), any(), any(), any()))
                 .willReturn(new CompletableFuture<>())
                 .willReturn(CompletableFuture.completedFuture(VIDEO_FILE));
-        given(mediaTranscoder.transcodeToHls(any(), any()))
+        given(mediaTranscoder.transcodeToHls(any(), any(), any()))
                 .willReturn(CompletableFuture.completedFuture(null));
 
         String running = service.startIngestion(MAGNET).videoId();
