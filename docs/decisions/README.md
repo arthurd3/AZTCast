@@ -17,7 +17,7 @@ editing it.
 | [0009](0009-redis-for-state-not-for-media.md)               | Redis for state and coordination, not media     | Accepted |
 | [0010](0010-the-player-drives-ingestion.md)                 | The player drives ingestion                     | Superseded in part by [0011](0011-the-library-replaces-manual-id-entry.md) |
 | [0011](0011-the-library-replaces-manual-id-entry.md)        | The library replaces manual videoId entry       | Extended by [0013](0013-an-ingestion-survives-the-page-that-started-it.md) |
-| [0012](0012-custom-player-controls.md)                      | Custom player controls replace the native ones  | Superseded in part by [0022](0022-subtitles-become-webvtt-sidecars.md) |
+| [0012](0012-custom-player-controls.md)                      | Custom player controls replace the native ones  | Superseded in part by [0022](0022-subtitles-become-webvtt-sidecars.md); amended by [0028](0028-scrollbars-are-themed-and-tables-do-not-scroll-sideways.md) |
 | [0013](0013-an-ingestion-survives-the-page-that-started-it.md) | An ingestion survives the page that started it | Amended by [0024](0024-transcode-progress-is-its-own-figure.md) |
 | [0014](0014-a-provider-log-in-sqlite.md)                    | A provider log, in SQLite                       | Accepted |
 | [0015](0015-ip-masking-belongs-to-the-network.md)           | IP masking belongs to the network               | Accepted |
@@ -33,3 +33,4 @@ editing it.
 | [0025](0025-a-ladder-the-browser-accepts.md)                 | A ladder the browser accepts                     | Supersedes part of [0021](0021-one-audio-rendition-shared-by-every-rung.md) |
 | [0026](0026-verified-before-it-is-published-repairable-after.md) | Verified before it is published, repairable after | Amends [0003](0003-filesystem-as-the-store.md) |
 | [0027](0027-audio-keeps-the-channels-the-source-had.md)      | Audio keeps the channels the source had          | Supersedes part of [0021](0021-one-audio-rendition-shared-by-every-rung.md) |
+| [0028](0028-scrollbars-are-themed-and-tables-do-not-scroll-sideways.md) | Scrollbars are themed, and tables do not scroll sideways | Amends [0012](0012-custom-player-controls.md) |
