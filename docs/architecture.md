@@ -508,12 +508,34 @@ A mismatch in any of them is a silent 404 on every segment.
 `scripts/smoke-test.sh` asserts all three against a running stack; run it with
 `VIDEO_ID=<uuid>` to include the delivery checks.
 
+## The swarm is somebody else's process
+
+`TorrentDownloader` has two implementations. `BtTorrentDownloader` runs the `bt` library inside
+this JVM. `BrokeredTorrentDownloader` opens a Unix socket to `torrent-engine`, writes one start
+request and turns newline-delimited JSON back into the callbacks the pipeline already expects —
+progress, the five peer observations, the address peers report, and a path when it finishes.
+
+The connection is the download: one socket per magnet, no request ids, and closing it cancels the
+torrent. Nothing about BitTorrent happens on this side of it, which is the point — the code parsing
+bytes from strangers lives in a process with no capabilities, a read-only filesystem, its own
+network and one writable directory. See
+[ADR-0032](decisions/0032-the-swarm-runs-in-a-process-of-its-own.md).
+
+The two engines are mutually exclusive by condition, and that matters more than it looks: an
+unconditional `BtRuntime` would open the peer port and bootstrap DHT in this JVM even when the
+brokered engine is selected, leaving the sandbox guarding an empty room.
+
 ## Known gaps
 
 - **No authentication.** Anyone who can reach the API can make the server
   download arbitrary torrents. The surface binds to loopback and checks `Host`
   and `Origin`, which bounds who "anyone" is without changing what they can do
   ([ADR-0031](decisions/0031-only-the-swarm-faces-outward.md)).
+- **Two BitTorrent engines to keep in step.** `bt` in-process and libtorrent
+  out-of-process, selected by `aztcast.streaming.torrent.engine`. The embedded
+  one is the abandoned library and the one that is not sandboxed; it stays
+  because it is what runs without a container, and it should eventually go
+  ([ADR-0032](decisions/0032-the-swarm-runs-in-a-process-of-its-own.md)).
 - **The magnet is barely validated.** `@NotBlank` and nothing else, so a caller
   can hand the engine a `&x.pe=` peer address pointing at loopback or a private
   range, and `&tr=` trackers are filtered by denylist rather than allowlist.
