@@ -2,6 +2,44 @@
 
 Turns a magnet link into an adaptive HLS stream you can watch in the browser.
 
+[![Java 21](https://img.shields.io/badge/Java-21-007396?style=flat-square&logo=openjdk&logoColor=white)](https://openjdk.org/projects/jdk/21/)
+[![Spring Boot 3.5](https://img.shields.io/badge/Spring%20Boot-3.5-6DB33F?style=flat-square&logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
+[![Maven](https://img.shields.io/badge/Maven-C71A36?style=flat-square&logo=apachemaven&logoColor=white)](https://maven.apache.org/)
+[![FFmpeg](https://img.shields.io/badge/FFmpeg-007808?style=flat-square&logo=ffmpeg&logoColor=white)](https://ffmpeg.org/)
+[![Vite 8](https://img.shields.io/badge/Vite-8-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vite.dev/)
+[![hls.js](https://img.shields.io/badge/hls.js-1.7-F5792A?style=flat-square&logo=html5&logoColor=white)](https://github.com/video-dev/hls.js)
+[![Docker Compose](https://img.shields.io/badge/Docker%20Compose-2496ED?style=flat-square&logo=docker&logoColor=white)](deploy/docker-compose.yml)
+[![nginx](https://img.shields.io/badge/nginx-sendfile-009639?style=flat-square&logo=nginx&logoColor=white)](docs/decisions/0007-nginx-serves-the-bytes.md)
+[![Redis](https://img.shields.io/badge/Redis-optional-FF4438?style=flat-square&logo=redis&logoColor=white)](#redis)
+[![SQLite](https://img.shields.io/badge/SQLite-providers-003B57?style=flat-square&logo=sqlite&logoColor=white)](#who-served-it)
+[![Leaflet](https://img.shields.io/badge/Leaflet-offline%20map-199900?style=flat-square&logo=leaflet&logoColor=white)](docs/decisions/0016-the-provenance-map-is-drawn-offline.md)
+
+[![backend-ci](https://img.shields.io/github/actions/workflow/status/arthurd3/AZTCast/backend-ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=backend-ci)](https://github.com/arthurd3/AZTCast/actions/workflows/backend-ci.yml)
+[![frontend-ci](https://img.shields.io/github/actions/workflow/status/arthurd3/AZTCast/frontend-ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=frontend-ci)](https://github.com/arthurd3/AZTCast/actions/workflows/frontend-ci.yml)
+
+## Quick start
+
+Needs **JDK 21**, **Node 20+** and **ffmpeg**. Redis is optional and off by
+default.
+
+```bash
+git clone git@github.com:arthurd3/AZTCast.git && cd AZTCast
+./scripts/check-prereqs.sh    # verifies the three, and reports what your ffmpeg can do
+make dev                      # player on http://localhost:5173, API on :8080
+```
+
+Or in containers, which needs only Docker:
+
+```bash
+make up                       # the whole stack on http://localhost:8000
+```
+
+Either way: open the player, paste a magnet link, press **Enviar**.
+[Something to watch](#something-to-watch) has two that are freely
+redistributable and finish while you read the rest of this page. The detail
+behind both routes — port conflicts, running the halves separately, the VPN
+overlay — is under [Running it](#running-it).
+
 ```
 magnet URI ──▶ acquisition ──▶ transcoding ──▶ playback ──▶ nginx ──▶ browser
                (bt library)    (ffmpeg)        (authorises) (sendfile)
@@ -30,14 +68,14 @@ and gets four where Cosmos Laundromat, a similar height, gets five.*
 | `docs/`          | Architecture, API contract, runbook, decision records           |
 | `scripts/`       | Prerequisite check, dev runner, smoke test                      |
 
-## Prerequisites
+## Running it
 
-- **JDK 21**
-- **Node 20+**
-- **ffmpeg** with an H.264 encoder — a hard runtime dependency; the API shells
-  out to it for every transcode
-- **Redis** — *optional*, and off by default. `docker compose` runs one; a local
-  `make dev` does not need it. See [what it costs to run without](#redis).
+### Prerequisites
+
+**ffmpeg** is the one that is not negotiable: it needs an H.264 encoder, and the
+API shells out to it for every transcode. **Redis** is *optional* and off by
+default — `docker compose` runs one, a local `make dev` does not need it; see
+[what it costs to run without](#redis).
 
 ```bash
 ./scripts/check-prereqs.sh
@@ -53,7 +91,7 @@ dropped rather than failing the ingestion. What each answer costs you is spelled
 in [docs/troubleshooting-hls.md](docs/troubleshooting-hls.md), and the script names
 the package that would change it.
 
-## Running it
+### Locally
 
 ```bash
 make dev          # API on :8080, player on :5173
