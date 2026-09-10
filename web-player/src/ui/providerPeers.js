@@ -57,11 +57,11 @@ export function renderPeerTable(peers, { maxRows = MAX_ROWS } = {}) {
   const headRow = document.createElement('tr');
   headRow.setAttribute('role', 'row');
   COLUMNS.forEach((label) => {
-    const cell = document.createElement('th');
-    cell.scope = 'col';
-    cell.setAttribute('role', 'columnheader');
-    cell.textContent = label;
-    headRow.appendChild(cell);
+    const heading = document.createElement('th');
+    heading.scope = 'col';
+    heading.setAttribute('role', 'columnheader');
+    heading.textContent = label;
+    headRow.appendChild(heading);
   });
   head.appendChild(headRow);
 
