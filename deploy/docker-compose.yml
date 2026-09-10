@@ -29,6 +29,13 @@ services:
     image: aztcast/streaming-api:dev
     environment:
       SPRING_PROFILES_ACTIVE: docker
+    # Incoming peer connections. Without a published port the client is outbound-only:
+    # it can dial peers but no peer can dial it, which loses every peer that is itself
+    # behind a NAT it cannot escape. Reaching this from outside still needs the host's
+    # own router to forward it; publishing is the half that is this file's business.
+    ports:
+      - "${TORRENT_PORT:-6891}:6891/tcp"
+      - "${TORRENT_PORT:-6891}:6891/udp"
     volumes:
       - media:/var/lib/aztcast
     depends_on:

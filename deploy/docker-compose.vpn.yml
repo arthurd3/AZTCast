@@ -72,6 +72,13 @@ services:
     # setting is needed in the application — and why none would have worked, since the
     # BitTorrent library dials raw NIO channels that ignore the JVM's proxy properties.
     network_mode: "service:gluetun"
+    # Cleared, not overridden. A container sharing another's network namespace owns no ports
+    # of its own, and Docker refuses the pair outright: "conflicting options: port publishing
+    # and the container type network mode". The base stack publishes 6891 so inbound peers can
+    # reach it; here gluetun publishes it instead, a few lines up. !reset is the only way to
+    # drop a list in an overlay — Compose appends to lists, so an empty `ports:` would merge to
+    # the base's entries and change nothing.
+    ports: !reset []
     depends_on:
       gluetun:
         condition: service_healthy
