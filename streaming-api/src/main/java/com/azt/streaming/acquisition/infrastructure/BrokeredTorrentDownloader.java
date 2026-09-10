@@ -201,6 +201,12 @@ public class BrokeredTorrentDownloader implements TorrentDownloader {
         request.put("magnet", trackerInjector.augmentToUri(magnetUrl));
         request.put("targetDir", targetDirectory.toAbsolutePath().toString());
         request.put("videoOnly", torrent.downloadVideoOnly());
+        // Whether the engine should report peers at all. The provider log is off by default, which
+        // binds the sink to a no-op -- and the engine had no way to know, so it built and wrote
+        // every sighting and this process parsed every one of them to hand it to a lambda that
+        // throws it away. Comparing against the constant is the honest test: NONE is the only
+        // binding that discards, and any real sink is a different object.
+        request.put("peerEvents", peerObservations != PeerObservationSink.NONE);
         request.put("timeoutSeconds", torrent.downloadTimeout().toSeconds());
         torrent.videoExtensions().forEach(request.withArray("videoExtensions")::add);
 
@@ -214,6 +220,10 @@ public class BrokeredTorrentDownloader implements TorrentDownloader {
         settings.put("maxActivePeerConnectionsPerTorrent", network.maxActivePeerConnectionsPerTorrent());
         settings.put("maxPeerConnections", network.maxPeerConnections());
         settings.put("peersPerTrackerRequest", network.peersPerTrackerRequest());
+        // These two were never put on the wire at all, so an operator could set them, read them
+        // back in the startup log, and have them do nothing.
+        settings.put("maxPendingConnectionRequests", network.maxPendingConnectionRequests());
+        settings.put("maxIoQueueSize", network.maxIoQueueSize());
         settings.put("trackerTimeoutSeconds", network.trackerTimeout().toSeconds());
         return request.toString();
     }

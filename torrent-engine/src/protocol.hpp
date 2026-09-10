@@ -24,6 +24,7 @@
 // comes back is inside the media root it asked for. See BrokeredTorrentDownloader.
 #pragma once
 
+#include <atomic>
 #include <mutex>
 #include <string>
 
@@ -45,17 +46,35 @@ public:
 
     // Writes one line. Returns false once the peer has gone, which is how a cancelled download is
     // noticed: the client closing the socket is the cancellation signal, and every writer checks.
+    //
+    // Serialisation happens before the lock is taken. It used to happen inside it, which held the
+    // mutex across a JSON dump for no reason -- the thing that must not interleave is the write,
+    // not the formatting.
     bool send(const json& message);
+
+    // Writes a blob of already-serialised, newline-terminated lines as one write.
+    //
+    // A poll tick produces its events back to back on one thread, and sending them individually
+    // meant one syscall each: at two hundred peers that is a few hundred writes a second for a
+    // socket whose own protocol notes claim "a few hundred events over hours". This is the same
+    // bytes in one call.
+    bool send_lines(const std::string& lines);
 
     int fd() const { return fd_; }
 
     // True once a write has failed, so pollers can stop without each having to try again.
-    bool broken() const { return broken_; }
+    //
+    // Atomic because it is written under the write mutex and read without it, from the poll loop.
+    // A plain bool there is a data race -- benign on x86 in practice, undefined in theory, and free
+    // to fix.
+    bool broken() const { return broken_.load(std::memory_order_relaxed); }
 
 private:
+    bool write_all(const std::string& payload);
+
     int fd_;
     std::mutex write_mutex_;
-    bool broken_ = false;
+    std::atomic<bool> broken_{false};
 };
 
 }  // namespace aztcast

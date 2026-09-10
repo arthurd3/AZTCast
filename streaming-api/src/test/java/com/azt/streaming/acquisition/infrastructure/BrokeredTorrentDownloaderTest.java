@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.azt.streaming.acquisition.domain.PeerObservation;
+import com.azt.streaming.acquisition.domain.PeerObservationSink;
 import com.azt.streaming.acquisition.domain.TorrentDownloadException;
 import com.azt.streaming.shared.config.StreamingProperties;
 import com.azt.streaming.support.PropertiesFixture;
@@ -149,6 +150,41 @@ class BrokeredTorrentDownloaderTest {
         assertThat(start.path("magnet").asText()).startsWith("magnet:?xt=urn:btih:");
         assertThat(start.path("network").path("acceptorPort").asInt()).isEqualTo(6891);
         assertThat(start.path("videoExtensions").isArray()).isTrue();
+        // A real sink was injected, so the engine is asked for peer events.
+        assertThat(start.path("peerEvents").asBoolean()).isTrue();
+        // Both of these used to be accepted in configuration and never put on the wire.
+        assertThat(start.path("network").path("maxPendingConnectionRequests").isMissingNode()).isFalse();
+        assertThat(start.path("network").path("maxIoQueueSize").isMissingNode()).isFalse();
+    }
+
+    @Test
+    @DisplayName("a no-op sink tells the engine not to bother reporting peers at all")
+    void doesNotAskForPeerEventsNobodyWants() throws Exception {
+        // The provider log is off by default, which binds the sink to PeerObservationSink.NONE.
+        // The engine had no way to know that, so it built and wrote every sighting and this side
+        // parsed every one to hand it to a lambda that discards it — about thirteen hundred events
+        // for one download, for nothing.
+        Path target = root.resolve("v1");
+        CompletableFuture<JsonNode> seen = new CompletableFuture<>();
+        Path socketPath = fakeEngine(exchange -> {
+            seen.complete(exchange.start());
+            exchange.send("{\"type\":\"done\",\"file\":\"" + target.resolve("Movie.mkv") + "\"}");
+        });
+
+        StreamingProperties properties = PropertiesFixture.defaults()
+                .engine(StreamingProperties.Engine.BROKERED)
+                .engineSocket(socketPath)
+                .build();
+        new BrokeredTorrentDownloader(
+                        PeerObservationSink.NONE,
+                        new BrokeredSwarmSelfView(),
+                        new MagnetTrackerInjector(properties),
+                        properties,
+                        new ObjectMapper(),
+                        Clock.fixed(NOW, ZoneOffset.UTC))
+                .download("v1", MAGNET, target, percent -> {});
+
+        assertThat(seen.get(10, TimeUnit.SECONDS).path("peerEvents").asBoolean()).isFalse();
     }
 
     @Test

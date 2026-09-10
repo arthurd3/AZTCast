@@ -30,22 +30,38 @@
 namespace aztcast {
 
 bool Conn::send(const json& message) {
-    std::lock_guard<std::mutex> guard(write_mutex_);
-    if (broken_) {
+    if (broken()) {
         return false;
     }
+    // Outside the lock on purpose. Formatting is this call's expensive half and it is per-message
+    // private work; only the write has to be exclusive.
     std::string line = message.dump();
     line.push_back('\n');
+    return write_all(line);
+}
+
+bool Conn::send_lines(const std::string& lines) {
+    if (lines.empty() || broken()) {
+        return !broken();
+    }
+    return write_all(lines);
+}
+
+bool Conn::write_all(const std::string& payload) {
+    std::lock_guard<std::mutex> guard(write_mutex_);
+    if (broken_.load(std::memory_order_relaxed)) {
+        return false;
+    }
     std::size_t written = 0;
-    while (written < line.size()) {
-        ssize_t n = ::write(fd_, line.data() + written, line.size() - written);
+    while (written < payload.size()) {
+        ssize_t n = ::write(fd_, payload.data() + written, payload.size() - written);
         if (n < 0) {
             if (errno == EINTR) {
                 continue;
             }
             // EPIPE is the ordinary end of a cancelled download, not an incident: the client closed
             // the socket because the ingestion was abandoned.
-            broken_ = true;
+            broken_.store(true, std::memory_order_relaxed);
             return false;
         }
         written += static_cast<std::size_t>(n);
@@ -94,6 +110,8 @@ NetworkSettings parse_network(const json& source) {
     settings.max_peer_connections = source.value("maxPeerConnections", settings.max_peer_connections);
     settings.peers_per_tracker_request =
         source.value("peersPerTrackerRequest", settings.peers_per_tracker_request);
+    settings.max_pending_connection_requests =
+        source.value("maxPendingConnectionRequests", settings.max_pending_connection_requests);
     settings.tracker_timeout_seconds =
         source.value("trackerTimeoutSeconds", settings.tracker_timeout_seconds);
     return settings;
@@ -119,6 +137,8 @@ void serve(int fd, Session& session) {
         request.magnet = message.at("magnet").get<std::string>();
         request.target_dir = message.at("targetDir").get<std::string>();
         request.video_only = message.value("videoOnly", true);
+        // Defaults true so an older client that does not send it keeps the previous behaviour.
+        request.peer_events = message.value("peerEvents", true);
         request.timeout_seconds = message.value("timeoutSeconds", 7200);
         for (const auto& extension : message.value("videoExtensions", json::array())) {
             request.video_extensions.push_back(extension.get<std::string>());
