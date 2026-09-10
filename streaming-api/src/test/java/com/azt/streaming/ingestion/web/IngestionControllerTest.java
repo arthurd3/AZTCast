@@ -12,11 +12,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.azt.streaming.ingestion.application.IngestionService;
+import com.azt.streaming.ingestion.domain.RepairAction;
 import com.azt.streaming.ingestion.domain.StreamJob;
 import com.azt.streaming.ingestion.domain.StreamJobNotFoundException;
+import com.azt.streaming.ingestion.domain.VideoNotRepairableException;
 import com.azt.streaming.shared.config.StreamingProperties;
 import com.azt.streaming.shared.storage.CatalogEntry;
 import com.azt.streaming.shared.storage.VideoCatalog;
+import com.azt.streaming.shared.storage.VideoNotFoundException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
@@ -253,5 +256,54 @@ class IngestionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].kept").value(true))
                 .andExpect(jsonPath("$[1].kept").value(false));
+    }
+
+    // ---------------------------------------------------------------- repair
+
+    @Test
+    @DisplayName("200 and no Location when there was nothing wrong")
+    void repairingASoundVideoAnswersOk() throws Exception {
+        given(ingestionService.repair(VIDEO_ID)).willReturn(RepairAction.NOTHING_TO_DO);
+
+        mockMvc.perform(post("/api/v1/videos/" + VIDEO_ID + "/repair"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.videoId").value(VIDEO_ID))
+                .andExpect(jsonPath("$.action").value("NOTHING_TO_DO"))
+                .andExpect(header().doesNotExist("Location"));
+    }
+
+    @Test
+    @DisplayName("202 and a Location pointing at the job, for work that takes time")
+    void repairingABrokenVideoAnswersAccepted() throws Exception {
+        given(ingestionService.repair(VIDEO_ID)).willReturn(RepairAction.MANIFESTS_REBUILT);
+
+        mockMvc.perform(post("/api/v1/videos/" + VIDEO_ID + "/repair"))
+                .andExpect(status().isAccepted())
+                .andExpect(header().string("Location", "/api/v1/videos/" + VIDEO_ID))
+                // The id is unchanged, which is the whole point: the link a viewer already has
+                // keeps working rather than being replaced by a second video.
+                .andExpect(jsonPath("$.videoId").value(VIDEO_ID))
+                .andExpect(jsonPath("$.action").value("MANIFESTS_REBUILT"))
+                .andExpect(jsonPath("$.detail").isNotEmpty());
+    }
+
+    @Test
+    @DisplayName("422 when the video is broken and there is nothing left to rebuild it from")
+    void refusesAVideoWithNoSourceLeft() throws Exception {
+        given(ingestionService.repair(VIDEO_ID))
+                .willThrow(new VideoNotRepairableException(VIDEO_ID, "no magnet was recorded for it"));
+
+        mockMvc.perform(post("/api/v1/videos/" + VIDEO_ID + "/repair"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.type").value("https://aztcast.dev/problems/not-repairable"))
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("no magnet")));
+    }
+
+    @Test
+    void repairingSomethingThatIsNotThereIsA404() throws Exception {
+        given(ingestionService.repair(VIDEO_ID)).willThrow(new VideoNotFoundException(VIDEO_ID));
+
+        mockMvc.perform(post("/api/v1/videos/" + VIDEO_ID + "/repair")).andExpect(status().isNotFound());
     }
 }

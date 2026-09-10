@@ -2,12 +2,16 @@ package com.azt.streaming.ingestion.application;
 
 import com.azt.streaming.acquisition.domain.TorrentDownloader;
 import com.azt.streaming.ingestion.domain.MagnetRegistry;
+import com.azt.streaming.ingestion.domain.RepairAction;
 import com.azt.streaming.ingestion.domain.StreamJob;
 import com.azt.streaming.ingestion.domain.StreamJobNotFoundException;
 import com.azt.streaming.ingestion.domain.StreamJobRepository;
 import com.azt.streaming.ingestion.domain.StreamJobStatus;
+import com.azt.streaming.ingestion.domain.VideoNotRepairableException;
 import com.azt.streaming.shared.storage.MediaStorage;
 import com.azt.streaming.shared.storage.VideoCatalog;
+import com.azt.streaming.shared.storage.VideoNotFoundException;
+import com.azt.streaming.transcoding.domain.LadderReport;
 import com.azt.streaming.transcoding.domain.MediaTranscoder;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -16,7 +20,9 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -42,6 +48,7 @@ public class IngestionService {
 
     private final Counter ready;
     private final Counter failed;
+    private final Counter repaired;
 
     public IngestionService(
             MediaStorage mediaStorage,
@@ -69,6 +76,10 @@ public class IngestionService {
         this.failed = Counter.builder("aztcast.ingestion.completed")
                 .description("Ingestions that reached a terminal state")
                 .tag("outcome", "failed")
+                .register(meterRegistry);
+        this.repaired = Counter.builder("aztcast.ingestion.completed")
+                .description("Ingestions that reached a terminal state")
+                .tag("outcome", "repaired")
                 .register(meterRegistry);
     }
 
@@ -120,7 +131,7 @@ public class IngestionService {
                             // ever sees, and it is gone once the reaper takes the download directory.
                             // Recorded here, before the transcode, so the sidecar is already in place
                             // when master.m3u8 lands and the video becomes listable.
-                            videoCatalog.record(videoId, videoFile.getFileName().toString());
+                            videoCatalog.record(videoId, videoFile.getFileName().toString(), magnetUrl);
                             return mediaTranscoder.transcodeToHls(
                                     videoFile, videoId, percent -> recordTranscodeProgress(videoId, percent));
                         })
@@ -145,6 +156,114 @@ public class IngestionService {
                         });
 
         return job;
+    }
+
+    /**
+     * Puts a video that stopped working back together, without changing its id.
+     *
+     * <p>The id is the whole point. A viewer's link, the library card, a bookmark and the keep
+     * marker are all {@code videoId}; re-ingesting the magnet would produce a second video under a
+     * second id and leave the first one broken and listed. {@link #startIngestion} always mints a
+     * fresh UUID — deliberately, it is starting something new — so this is a separate path rather
+     * than an argument to it.
+     *
+     * <p>It does the cheapest thing that works:
+     *
+     * <ol>
+     *   <li>Nothing, if the ladder is sound and playable.
+     *   <li>Rebuild the manifests, if the media is intact and only the playlists are wrong. This is
+     *       the common case after a change to what the master advertises, and it costs seconds
+     *       rather than an encode.
+     *   <li>Transcode again from the retained download, if segments are missing.
+     *   <li>Fetch the torrent again from the recorded magnet, if the download is gone too.
+     * </ol>
+     *
+     * @throws com.azt.streaming.shared.storage.VideoNotFoundException if nothing is on disk for it
+     * @throws com.azt.streaming.ingestion.domain.VideoNotRepairableException if it is broken and
+     *     there is nothing left to rebuild it from
+     */
+    public RepairAction repair(String videoId) {
+        if (mediaStorage.resolveHlsAsset(videoId, MediaStorage.POSTER).isEmpty()
+                && mediaStorage.existingDownload(videoId).isEmpty()
+                && mediaTranscoder.inspect(videoId).problems().contains("master.m3u8 is missing or unreadable")) {
+            // No poster, no download, no master: there is no video here to repair, as opposed to a
+            // video that is broken.
+            throw new VideoNotFoundException(videoId);
+        }
+
+        LadderReport report = mediaTranscoder.inspect(videoId);
+        if (report.isSound()) {
+            log.info("Repair for {} found nothing to do", videoId);
+            return RepairAction.NOTHING_TO_DO;
+        }
+        log.warn("Repairing {}: {}", videoId, report.summary());
+
+        Optional<Path> download = mediaStorage.existingDownload(videoId);
+        if (download.isPresent()) {
+            if (report.mediaIntact()) {
+                // The segments are bit-for-bit correct and the playlists describing them are not.
+                // Re-encoding would spend minutes to produce identical output.
+                startRepairJob(videoId, null, () -> mediaTranscoder.republish(download.get(), videoId));
+                return RepairAction.MANIFESTS_REBUILT;
+            }
+            mediaStorage.discardIncompleteHls(videoId);
+            startRepairJob(
+                    videoId,
+                    null,
+                    () -> mediaTranscoder.transcodeToHls(
+                            download.get(), videoId, percent -> recordTranscodeProgress(videoId, percent)));
+            return RepairAction.RETRANSCODED;
+        }
+
+        String magnetUrl = videoCatalog
+                .sourceMagnetOf(videoId)
+                .orElseThrow(() -> new VideoNotRepairableException(
+                        videoId,
+                        "its media is incomplete, the download has been reaped, and no magnet was recorded for it"));
+
+        mediaStorage.discardIncompleteHls(videoId);
+        Path downloadDirectory = mediaStorage.downloadDirectoryFor(videoId);
+        startRepairJob(
+                videoId,
+                magnetUrl,
+                () -> torrentDownloader
+                        .download(videoId, magnetUrl, downloadDirectory, percent -> recordProgress(videoId, percent))
+                        .thenCompose(videoFile -> {
+                            jobRepository
+                                    .findById(videoId)
+                                    .ifPresent(job -> jobRepository.save(job.transcoding(clock.instant())));
+                            return mediaTranscoder.transcodeToHls(
+                                    videoFile, videoId, percent -> recordTranscodeProgress(videoId, percent));
+                        }));
+        return RepairAction.REFETCHED;
+    }
+
+    /**
+     * Runs a repair in the background under a job the player can poll, exactly like an ingestion.
+     *
+     * <p>The job record is replaced rather than amended: whatever it said before, this video is
+     * being worked on again now, and a viewer watching the same endpoint should see that.
+     *
+     * @param magnetUrl the source being fetched, or null when the repair needs no network
+     */
+    private void startRepairJob(String videoId, String magnetUrl, Supplier<CompletableFuture<Void>> work) {
+        StreamJob job = jobRepository.save(
+                magnetUrl == null
+                        ? StreamJob.downloading(videoId, null, clock.instant()).transcoding(clock.instant())
+                        : StreamJob.downloading(videoId, magnetUrl, clock.instant()));
+        work.get()
+                .whenComplete((ignored, error) -> {
+                    if (error == null) {
+                        log.info("Repair of {} finished", videoId);
+                        jobRepository.save(job.ready(clock.instant()));
+                        repaired.increment();
+                    } else {
+                        log.error("Repair of {} failed", videoId, error);
+                        StreamJob latest = jobRepository.findById(videoId).orElse(job);
+                        jobRepository.save(latest.failed(rootCauseMessage(error), clock.instant()));
+                        failed.increment();
+                    }
+                });
     }
 
     /**

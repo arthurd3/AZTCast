@@ -47,6 +47,21 @@ public class VideoCatalog {
     private static final String TITLE_FIELD = "title";
 
     /**
+     * The magnet the video came from.
+     *
+     * <p>Recorded because nothing else survives long enough to answer "where did this come from".
+     * Job state is in memory by default and expires under a TTL when Redis is on; the magnet claim
+     * is keyed by infohash rather than by videoId; and the raw download is reaped on the same
+     * seven-day schedule with no exemption for a video someone kept. Given only a videoId on disk,
+     * there was no way back to the source — which makes repairing a video that lost a segment
+     * impossible, however intact the rest of it is.
+     *
+     * <p>It sits beside the media rather than in Redis for the same reason the title does: the
+     * sidecar and the video share one lifetime and cannot drift apart.
+     */
+    private static final String MAGNET_FIELD = "magnetUrl";
+
+    /**
      * A rendition playlist, as {@code FfmpegCommandBuilder} names them.
      *
      * <p>Matching the shape rather than listing every {@code *.m3u8} keeps stray files out of the
@@ -80,16 +95,32 @@ public class VideoCatalog {
      * <p>The sidecar lives inside the video's own directory so the reaper deletes it with everything
      * else: metadata and media then share one lifetime and cannot drift apart.
      *
-     * <p>Never throws. A title is a nicety; an ingestion that already downloaded and transcoded a
-     * torrent must not be failed because a small file could not be written.
+     * <p>Never throws. This is a nicety; an ingestion that already downloaded and transcoded a
+     * torrent must not be failed because a small file could not be written. The cost of that
+     * tolerance is that a video whose sidecar failed to write cannot be re-fetched later — which is
+     * still strictly better than failing the ingestion outright.
      */
-    public void record(String videoId, String title) {
+    public void record(String videoId, String title, String magnetUrl) {
         try {
             Path file = mediaStorage.hlsDirectoryFor(videoId).resolve(METADATA_FILE);
-            objectMapper.writeValue(file.toFile(), Map.of(TITLE_FIELD, title));
+            Map<String, String> metadata = magnetUrl == null || magnetUrl.isBlank()
+                    ? Map.of(TITLE_FIELD, title)
+                    : Map.of(TITLE_FIELD, title, MAGNET_FIELD, magnetUrl);
+            objectMapper.writeValue(file.toFile(), metadata);
         } catch (IOException | RuntimeException e) {
             log.warn("Could not record metadata for {}", videoId, e);
         }
+    }
+
+    /**
+     * The magnet this video came from, or empty when the sidecar does not name one.
+     *
+     * <p>Empty is the ordinary answer for anything ingested before the field existed, and the
+     * repair path says so rather than treating it as an error: those videos can still be repaired
+     * from a retained download, just not re-fetched once that download is gone.
+     */
+    public Optional<String> sourceMagnetOf(String videoId) {
+        return Optional.ofNullable(field(mediaStorage.hlsDirectoryFor(videoId), MAGNET_FIELD));
     }
 
     /**
@@ -167,13 +198,18 @@ public class VideoCatalog {
      * failed listing.
      */
     private String titleOf(Path directory) {
+        return field(directory, TITLE_FIELD);
+    }
+
+    /** One field of the sidecar, or null when the file, the field or its value is not usable. */
+    private String field(Path directory, String name) {
         Path file = directory.resolve(METADATA_FILE);
         if (!Files.isRegularFile(file)) {
             return null;
         }
         try {
-            String title = objectMapper.readTree(file.toFile()).path(TITLE_FIELD).asText(null);
-            return title == null || title.isBlank() ? null : title;
+            String value = objectMapper.readTree(file.toFile()).path(name).asText(null);
+            return value == null || value.isBlank() ? null : value;
         } catch (IOException | RuntimeException e) {
             log.warn("Ignoring unreadable metadata for {}", directory.getFileName(), e);
             return null;

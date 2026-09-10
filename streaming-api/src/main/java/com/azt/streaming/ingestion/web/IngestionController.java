@@ -1,8 +1,10 @@
 package com.azt.streaming.ingestion.web;
 
 import com.azt.streaming.ingestion.application.IngestionService;
+import com.azt.streaming.ingestion.domain.RepairAction;
 import com.azt.streaming.ingestion.domain.StreamJob;
 import com.azt.streaming.ingestion.web.dto.CreateStreamJobRequest;
+import com.azt.streaming.ingestion.web.dto.RepairResponse;
 import com.azt.streaming.ingestion.web.dto.StreamJobResponse;
 import com.azt.streaming.ingestion.web.dto.VideoSummaryResponse;
 import com.azt.streaming.shared.storage.VideoCatalog;
@@ -89,6 +91,40 @@ public class IngestionController {
             throw new VideoNotFoundException(videoId);
         }
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Puts a video that stopped working back together, under the same id.
+     *
+     * <p>POST rather than PUT: this is not setting a flag, it is asking for work whose cost depends
+     * on what is wrong — anything from rewriting a playlist to fetching the torrent again. It is
+     * also not idempotent in the way PUT promises, because the answer changes as the repair runs.
+     *
+     * <p>Rate limited, unlike {@code /keep} and for the opposite reason: at its most expensive this
+     * spends a full download and a full encode, which is exactly what the limit exists to bound.
+     *
+     * <p>{@code 200} when there was nothing to do, {@code 202} when work has started and the client
+     * should poll {@code GET /api/v1/videos/&#123;videoId&#125;} to follow it.
+     */
+    @PostMapping("/{videoId}/repair")
+    public ResponseEntity<RepairResponse> repairVideo(@PathVariable String videoId) {
+        RepairAction action = ingestionService.repair(videoId);
+        RepairResponse body = new RepairResponse(videoId, action, describe(action));
+        return action == RepairAction.NOTHING_TO_DO
+                ? ResponseEntity.ok(body)
+                : ResponseEntity.accepted()
+                        .location(URI.create("/api/v1/videos/" + videoId))
+                        .body(body);
+    }
+
+    private static String describe(RepairAction action) {
+        return switch (action) {
+            case NOTHING_TO_DO -> "The ladder is complete and playable; nothing was changed.";
+            case MANIFESTS_REBUILT -> "The media was intact and the playlists were not."
+                    + " Rebuilding the manifests, which takes seconds and re-encodes nothing.";
+            case RETRANSCODED -> "Segments were missing. Transcoding the retained download again.";
+            case REFETCHED -> "The download was gone too. Fetching the torrent again from the recorded magnet.";
+        };
     }
 
     /**

@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -67,6 +68,34 @@ public class FileSystemMediaStorage implements MediaStorage {
             return Optional.empty();
         }
         return Files.isRegularFile(asset) ? Optional.of(asset) : Optional.empty();
+    }
+
+    @Override
+    public Optional<Path> existingDownload(String videoId) {
+        Path directory;
+        try {
+            directory = requireInside(downloadsRoot, videoId, "");
+        } catch (IllegalArgumentException e) { // InvalidPathException is a subclass
+            log.warn("Refusing to look for a download outside the media root: videoId={}", videoId);
+            return Optional.empty();
+        }
+        if (!Files.isDirectory(directory)) {
+            return Optional.empty();
+        }
+        try (Stream<Path> tree = Files.walk(directory)) {
+            return tree.filter(Files::isRegularFile).max(Comparator.comparingLong(FileSystemMediaStorage::sizeOf));
+        } catch (IOException e) {
+            log.warn("Could not look for a retained download under {}", directory, e);
+            return Optional.empty();
+        }
+    }
+
+    private static long sizeOf(Path file) {
+        try {
+            return Files.size(file);
+        } catch (IOException e) {
+            return 0;
+        }
     }
 
     @Override

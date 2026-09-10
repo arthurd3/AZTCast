@@ -72,7 +72,7 @@ class VideoCatalogTest {
     void readsBackTheTitleItRecorded() throws IOException {
         ready(VIDEO_ID);
 
-        catalog.record(VIDEO_ID, "Big.Buck.Bunny.2008.1080p.mkv");
+        catalog.record(VIDEO_ID, "Big.Buck.Bunny.2008.1080p.mkv", null);
 
         assertThat(catalog.list())
                 .singleElement()
@@ -150,7 +150,7 @@ class VideoCatalogTest {
     void recordingATitleNeverThrowsWhenTheWriteCannotHappen() {
         // A title is a nicety. An ingestion that already downloaded and transcoded a torrent must
         // not be failed because a small file could not be written.
-        catalog.record("../escape", "anything");
+        catalog.record("../escape", "anything", null);
 
         assertThat(catalog.list()).isEmpty();
     }
@@ -221,5 +221,27 @@ class VideoCatalogTest {
         catalog.setKept(VIDEO_ID, true);
 
         assertThat(catalog.list()).singleElement().satisfies(entry -> assertThat(entry.qualities()).isEmpty());
+    }
+
+    @Test
+    @DisplayName("the magnet survives a round trip, so a repair can find its way home")
+    void recordsAndReadsBackTheMagnet() {
+        // Nothing else outlives the video: job state is in memory by default, expires under a TTL
+        // when Redis is on, and the claim is keyed by infohash rather than by videoId.
+        String magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567";
+        catalog.record(VIDEO_ID, "movie.mkv", magnet);
+
+        assertThat(catalog.sourceMagnetOf(VIDEO_ID)).contains(magnet);
+    }
+
+    @Test
+    @DisplayName("a sidecar written before the field existed reads as absent, not as broken")
+    void toleratesAnOlderSidecar() {
+        // Every video ingested before this change has one. It can still be repaired from a retained
+        // download; it just cannot be re-fetched once that download is gone, and the repair says so.
+        catalog.record(VIDEO_ID, "movie.mkv", null);
+
+        assertThat(catalog.sourceMagnetOf(VIDEO_ID)).isEmpty();
+        assertThat(catalog.list()).isNotNull();
     }
 }

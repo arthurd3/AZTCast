@@ -26,7 +26,9 @@ editing it.
 | [0018](0018-the-top-rung-is-copied-not-encoded.md)          | The top rung is copied, not encoded             | Supersedes part of [0008](0008-cmaf-ladder-in-one-pass.md); superseded in part by [0021](0021-one-audio-rendition-shared-by-every-rung.md) |
 | [0019](0019-kept-videos-outlive-the-retention-window.md)    | Kept videos outlive the retention window        | Amends [0003](0003-filesystem-as-the-store.md), [0009](0009-redis-for-state-not-for-media.md) |
 | [0020](0020-ffmpeg-capabilities-are-probed-not-assumed.md)   | ffmpeg capabilities are probed, not assumed      | Supersedes part of [0005](0005-ffmpeg-as-an-out-of-process-port.md) |
-| [0021](0021-one-audio-rendition-shared-by-every-rung.md)    | One audio rendition, shared by every rung        | Supersedes part of [0018](0018-the-top-rung-is-copied-not-encoded.md) |
+| [0021](0021-one-audio-rendition-shared-by-every-rung.md)    | One audio rendition, shared by every rung        | Supersedes part of [0018](0018-the-top-rung-is-copied-not-encoded.md); superseded in part by [0025](0025-a-ladder-the-browser-accepts.md) |
 | [0022](0022-subtitles-become-webvtt-sidecars.md)            | Subtitles become WebVTT sidecars                 | Supersedes part of [0012](0012-custom-player-controls.md) |
 | [0023](0023-the-bittorrent-runtime-outlives-its-clients.md) | The BitTorrent runtime outlives its clients      | Accepted |
 | [0024](0024-transcode-progress-is-its-own-figure.md)        | Transcode progress is its own figure             | Amends [0013](0013-an-ingestion-survives-the-page-that-started-it.md) |
+| [0025](0025-a-ladder-the-browser-accepts.md)                 | A ladder the browser accepts                     | Supersedes part of [0021](0021-one-audio-rendition-shared-by-every-rung.md) |
+| [0026](0026-verified-before-it-is-published-repairable-after.md) | Verified before it is published, repairable after | Amends [0003](0003-filesystem-as-the-store.md) |

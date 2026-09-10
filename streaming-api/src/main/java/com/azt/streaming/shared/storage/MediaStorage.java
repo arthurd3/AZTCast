@@ -41,6 +41,19 @@ public interface MediaStorage {
     Optional<Path> resolveHlsAsset(String videoId, String fileName);
 
     /**
+     * The source file still on disk for {@code videoId}, if the reaper has not taken it yet.
+     *
+     * <p>The largest regular file under the download directory. Deliberately simpler than
+     * {@code VideoFileLocator}, which walks an entire torrent and has to filter by extension to
+     * avoid picking up a sample or an NFO: by the time anything asks this, {@code download-video-only}
+     * has already reduced the directory to the one file that was wanted. Picking wrongly is not
+     * dangerous either — ffprobe rejects a non-media file and the caller falls back to re-fetching.
+     *
+     * <p>Empty means the source is gone, which is the normal state seven days after an ingestion.
+     */
+    Optional<Path> existingDownload(String videoId);
+
+    /**
      * Deletes a half-written HLS directory, and refuses to delete a finished one.
      *
      * <p>A failed encode used to leave its wreckage on disk until the reaper came for it a week
