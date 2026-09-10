@@ -166,6 +166,56 @@
   }
 
   /*
+   * Below the save marker rather than beside it. They are the same size and the same shape, and
+   * the disk one is the destructive one — putting them shoulder to shoulder in the corner would
+   * make a mis-tap on a phone reach the wrong one.
+   */
+  .video-card__delete {
+    position: absolute;
+    top: calc(var(--space-2) + 42px);
+    left: var(--space-2);
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: color-mix(in oklab, var(--void) 70%, transparent);
+    backdrop-filter: blur(8px);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition:
+      color var(--dur-base) var(--ease-out),
+      border-color var(--dur-base) var(--ease-out);
+  }
+
+  .video-card__delete:hover:not(:disabled) {
+    color: var(--danger);
+  }
+
+  .video-card__delete:disabled {
+    cursor: progress;
+  }
+
+  /*
+   * Armed: one more click deletes. Loud on purpose — this is the only state in the library where
+   * the next click destroys something, and it should not look like the state before it.
+   */
+  .video-card__delete--armed {
+    color: var(--void);
+    background: var(--danger);
+    border-color: var(--danger);
+  }
+
+  .video-card__delete-icon {
+    width: 17px;
+    height: 17px;
+  }
+
+  /*
    * A <button>, so it is focusable and activates from the keyboard with no hand-rolled
    * tabindex or keydown handler. Everything below re-states what the bare-element button rule
    * used to hand it, because that rule is gone.
@@ -396,6 +446,21 @@
     font-size: var(--text-sm);
     color: var(--text-dim);
     font-variant-numeric: tabular-nums;
+  }
+
+  /*
+   * Quieter than the count beside it, because it is context rather than an answer: nobody comes to
+   * the library to read it, they come to find a video. It turns the colour of a warning only when
+   * the free space is close enough to the floor for the next magnet to be refused.
+   */
+  .library-toolbar__space {
+    font-size: var(--text-sm);
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .library-toolbar__space--low {
+    color: var(--danger);
   }
 
   /* ---- Empty and error states ---- */

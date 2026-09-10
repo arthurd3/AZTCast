@@ -47,6 +47,11 @@ public class InMemoryStreamJobRepository implements StreamJobRepository {
     }
 
     @Override
+    public void delete(String videoId) {
+        jobs.remove(videoId);
+    }
+
+    @Override
     public List<StreamJob> findUnfinished() {
         // Copy under the monitor: the map is synchronized per operation, but iterating it is not.
         synchronized (jobs) {

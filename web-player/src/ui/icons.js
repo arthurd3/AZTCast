@@ -48,6 +48,8 @@ const PATHS = {
   ],
   check: ['M4.5 12.5 9.5 17.5 19.5 7'],
   close: ['M6 6l12 12M18 6 6 18'],
+  /* Lid, can, and the two slots inside it — enough of a bin to read at 16px. */
+  trash: ['M4 7h16', 'M9.5 7V4.5h5V7', 'M6.5 7l1 13h9l1-13', 'M10.5 10.5v6.5M13.5 10.5v6.5'],
   arrowLeft: ['M20 12H4', 'M10 6l-6 6 6 6'],
   keyboard: ['M3 6.5h18v11H3z', 'M7 10h.01M11 10h.01M15 10h.01M8 14h8'],
   spark: ['M12 3v4M12 17v4M3 12h4M17 12h4', 'M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z'],

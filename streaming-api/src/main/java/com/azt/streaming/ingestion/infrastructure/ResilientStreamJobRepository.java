@@ -42,6 +42,20 @@ public class ResilientStreamJobRepository implements StreamJobRepository {
     }
 
     @Override
+    public void delete(String videoId) {
+        local.delete(videoId);
+        try {
+            redis.delete(videoId);
+        } catch (RuntimeException e) {
+            // The media is already gone by the time this runs. A surviving job record is untidy, not
+            // dangerous: it expires on its own TTL, and until then it reports READY for a video the
+            // catalogue no longer lists -- which is what every expired-media job has always looked
+            // like. Failing the delete over it would be the worse trade.
+            log.warn("Could not delete job {} from Redis; it will expire on its TTL", videoId, e);
+        }
+    }
+
+    @Override
     public List<StreamJob> findUnfinished() {
         try {
             return redis.findUnfinished();

@@ -10,9 +10,11 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * The one recursive delete in this codebase.
  *
- * <p>It lived inside {@link MediaReaper} as a private method while it had one caller. It has two now
- * — the reaper on schedule, and storage when an encode fails halfway — and a second hand-written
- * {@code walk} + {@code reverseOrder} + {@code deleteIfExists} is not a thing to have two of.
+ * <p>It lived inside the reaper as a private method while it had one caller. Every path that removes
+ * media goes through it now — {@link DownloadReaper} sweeping abandoned torrents, storage discarding
+ * a source once its transcode is verified, storage clearing up after an encode that failed halfway,
+ * and the deliberate delete of a whole video — and a second hand-written {@code walk} +
+ * {@code reverseOrder} + {@code deleteIfExists} is not a thing to have two of.
  */
 @Slf4j
 final class MediaDirectories {

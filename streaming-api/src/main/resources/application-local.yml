@@ -4,6 +4,7 @@ aztcast:
     web:
       allowed-origins:
         - http://localhost:5173
+      allowed-hosts: [localhost, 127.0.0.1, "::1", "[::1]"]
 
     # On here, unlike the shipped default, because this is the profile of someone
     # working on the feature. Paths are relative to streaming-api/, which is where

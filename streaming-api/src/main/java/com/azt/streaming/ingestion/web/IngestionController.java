@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Starts ingestions, reports their progress, and lists what finished. */
@@ -65,7 +66,11 @@ public class IngestionController {
     }
 
     /**
-     * Keeps a video past the retention window, or stops keeping it.
+     * Marks a video as one to keep, or stops keeping it.
+     *
+     * <p>The marker used to exempt a video from the reaper. Nothing reaps the ladder now, so what it
+     * does instead is make {@link #deleteVideo} stop and ask (ADR-0030) — and drive the library's
+     * <em>Salvos</em> filter, which it always did.
      *
      * <p>A sub-resource with PUT and DELETE rather than a POST verb, because the thing being set is
      * a flag that is either there or not: PUT twice is the same as PUT once, and DELETE on a video
@@ -106,6 +111,29 @@ public class IngestionController {
      * <p>{@code 200} when there was nothing to do, {@code 202} when work has started and the client
      * should poll {@code GET /api/v1/videos/&#123;videoId&#125;} to follow it.
      */
+    /**
+     * Deletes a video: its ladder, the torrent it came from, its job record and its magnet claim.
+     *
+     * <p>This is new, and its absence was the hole this endpoint fills. Media used to leave the disk
+     * only when a seven-day reaper took it, so "delete this video" was not something the API could
+     * do at all — the documented answer was {@code rm -rf} on the media root. Now that nothing
+     * expires on its own, deliberate deletion is the only way space is ever reclaimed, so it has to
+     * be an operation rather than a shell command.
+     *
+     * <p>{@code force} is what the {@code kept} marker costs. Without it a kept video answers 409
+     * rather than deleting, which is the only teeth that flag has left now that there is no reaper
+     * for it to hide from.
+     *
+     * <p>Not rate limited, for the same reason keeping is not: the limiter exists because starting
+     * an ingestion costs hours of CPU and gigabytes of disk. This returns them.
+     */
+    @DeleteMapping("/{videoId}")
+    public ResponseEntity<Void> deleteVideo(
+            @PathVariable String videoId, @RequestParam(defaultValue = "false") boolean force) {
+        ingestionService.delete(videoId, force);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/{videoId}/repair")
     public ResponseEntity<RepairResponse> repairVideo(@PathVariable String videoId) {
         RepairAction action = ingestionService.repair(videoId);

@@ -8,8 +8,11 @@ import com.azt.streaming.ingestion.domain.StreamJobNotFoundException;
 import com.azt.streaming.ingestion.domain.StreamJobRepository;
 import com.azt.streaming.ingestion.domain.StreamJobStatus;
 import com.azt.streaming.ingestion.domain.VideoNotRepairableException;
+import com.azt.streaming.shared.config.StreamingProperties;
+import com.azt.streaming.shared.storage.InsufficientStorageException;
 import com.azt.streaming.shared.storage.MediaStorage;
 import com.azt.streaming.shared.storage.VideoCatalog;
+import com.azt.streaming.shared.storage.VideoIsKeptException;
 import com.azt.streaming.shared.storage.VideoNotFoundException;
 import com.azt.streaming.transcoding.domain.AudioPlan;
 import com.azt.streaming.transcoding.domain.LadderReport;
@@ -38,6 +41,7 @@ public class IngestionService {
     private final MediaTranscoder mediaTranscoder;
     private final StreamJobRepository jobRepository;
     private final MagnetRegistry magnetRegistry;
+    private final StreamingProperties properties;
     private final Clock clock;
 
     /**
@@ -58,6 +62,7 @@ public class IngestionService {
             MediaTranscoder mediaTranscoder,
             StreamJobRepository jobRepository,
             MagnetRegistry magnetRegistry,
+            StreamingProperties properties,
             MeterRegistry meterRegistry,
             Clock clock) {
         this.mediaStorage = mediaStorage;
@@ -66,6 +71,7 @@ public class IngestionService {
         this.mediaTranscoder = mediaTranscoder;
         this.jobRepository = jobRepository;
         this.magnetRegistry = magnetRegistry;
+        this.properties = properties;
         this.clock = clock;
         this.deduplicated = Counter.builder("aztcast.ingestion.deduplicated")
                 .description("Ingestions short-circuited because the magnet was already known")
@@ -93,6 +99,10 @@ public class IngestionService {
      * timeout is exactly when it matters.
      */
     public StreamJob startIngestion(final String magnetUrl) {
+        // Before the claim, not after: a refused ingestion must not leave a magnet claimed by a
+        // videoId that never existed, or the next attempt would be deduplicated into nothing.
+        requireRoomToStart();
+
         final String videoId = UUID.randomUUID().toString();
 
         Optional<StreamJob> alreadyRunning = existingIngestionOf(magnetUrl, videoId);
@@ -142,6 +152,11 @@ public class IngestionService {
                                 log.info("Ingestion {} ready", videoId);
                                 jobRepository.save(job.ready(clock.instant()));
                                 ready.increment();
+                                // The ladder is verified by the time this runs, so the torrent it
+                                // was built from is a second full copy of a video nobody watches and
+                                // nothing seeds. Freeing it here rather than leaving it for the
+                                // reaper is the difference between minutes and a day of holding it.
+                                mediaStorage.discardDownload(videoId);
                             } else {
                                 downloading.set(false);
                                 log.error("Ingestion {} failed", videoId, error);
@@ -347,6 +362,60 @@ public class IngestionService {
             magnetRegistry.claim(magnetUrl, videoId);
         }
         return job;
+    }
+
+    /**
+     * Deletes a video and everything the pipeline knows about it.
+     *
+     * <p>The only way media leaves this disk. Nothing schedules it, nothing infers it from watch
+     * history, and there is no window after which it happens on its own — see ADR-0030. That makes
+     * this the one destructive operation in the API, which is why the {@code kept} marker stops it.
+     *
+     * <p>Four things go, in an order chosen so a failure part-way through cannot strand the caller.
+     * The sidecar is read first, because it lives inside the directory that is about to go. The
+     * media goes next, and if none of it was there the caller gets a 404 rather than a cheerful 204
+     * for a video that never existed. Only then are the job record and the magnet claim released —
+     * the claim especially, because a claim that outlives its media makes re-adding the same magnet
+     * hand back the deleted id, and the caller a library card that 404s when clicked.
+     *
+     * @param force delete even if the video is marked as kept
+     * @throws VideoNotFoundException if there is nothing on disk under this id
+     * @throws VideoIsKeptException if it is kept and {@code force} is false
+     */
+    public void delete(String videoId, boolean force) {
+        if (!force && videoCatalog.isKept(videoId)) {
+            throw new VideoIsKeptException(videoId);
+        }
+
+        Optional<String> magnetUrl = videoCatalog.sourceMagnetOf(videoId);
+
+        boolean removedHls = mediaStorage.discardHls(videoId);
+        boolean removedDownload = mediaStorage.discardDownload(videoId);
+        if (!removedHls && !removedDownload) {
+            throw new VideoNotFoundException(videoId);
+        }
+
+        jobRepository.delete(videoId);
+        magnetUrl.ifPresent(magnetRegistry::release);
+        log.info("Deleted video {}", videoId);
+    }
+
+    /**
+     * Refuses an ingestion that would start with the media volume below its floor.
+     *
+     * <p>An unreadable filesystem is not a refusal. The floor exists to stop a download that cannot
+     * finish; declining to start one because a stat call failed would be a different, worse policy
+     * wearing the same clothes.
+     */
+    private void requireRoomToStart() {
+        long floor = properties.storage().minFreeSpace().toBytes();
+        if (floor <= 0) {
+            return;
+        }
+        long usable = mediaStorage.volumeSpace().map(space -> space.usableBytes()).orElse(Long.MAX_VALUE);
+        if (usable < floor) {
+            throw new InsufficientStorageException(usable, floor);
+        }
     }
 
     public StreamJob findJob(String videoId) {

@@ -50,6 +50,32 @@ The response is `application/problem+json` with type
 seconds. Playback is **not** rate limited, and neither is any safe method — the
 bucket bounds the side effect of `POST`, and `GET /api/v1/videos` shares its path.
 
+It needs Redis, which is off in the default profile, so an instance running the
+shipped configuration is not rate limited at all.
+
+### `507 Insufficient Storage`
+
+`POST /api/v1/videos` refuses to start when the media volume has less free than
+`aztcast.streaming.storage.min-free-space`. Type
+`https://aztcast.dev/problems/insufficient-storage`; the detail names both numbers.
+
+Checked before the magnet is claimed and before anything is written, so a refusal
+leaves no trace and the same magnet can be posted again once space is freed.
+`507` rather than `503`: the request was understood and will not succeed on its own
+later — something has to give up space first.
+
+### `403 Forbidden`
+
+The `Host` in the request is not in `aztcast.streaming.web.allowed-hosts`, or a
+state-changing request carried an `Origin` that is not. Type
+`https://aztcast.dev/problems/host-not-allowed`.
+
+This is not authentication and there is no credential that gets past it; it exists
+because a service on `127.0.0.1` is reachable by any page the browser has open
+([ADR-0031](decisions/0031-only-the-swarm-faces-outward.md)). A request with no
+`Origin` header — `curl`, and anything that is not a browser — is never refused by
+the second check.
+
 ## `GET /api/v1/videos`
 
 Everything that can be watched, newest first.
@@ -75,7 +101,7 @@ Cache-Control: no-store
 **Read from disk, not from job state**, and the difference is visible in practice: a video whose
 job record has expired or was lost to a restart is still listed here while
 `GET /api/v1/videos/{videoId}` answers `404` for it. A video appears once its `master.m3u8`
-exists — the file the pipeline writes last — and disappears when the reaper deletes its media.
+exists — the file the pipeline writes last — and disappears only when someone deletes it.
 
 `posterUrl` is **omitted** when no poster frame exists — anything transcoded before posters did,
 or a source ffmpeg could not read a frame out of. Clients should draw a placeholder rather than
@@ -91,8 +117,9 @@ top rung is a copy of it named for the source's own height — so a 1080p source
 `["1080p", "720p", …]` and a 720p one simply has no 1080p rung
 ([ADR-0018](decisions/0018-the-top-rung-is-copied-not-encoded.md)).
 
-`kept` is always present. `true` means the video is exempt from the retention window and will not
-be deleted automatically.
+`kept` is always present. No video is deleted automatically, so `true` no longer means exempt from
+anything — it means `DELETE /api/v1/videos/{videoId}` will refuse without `force=true`, and that the
+library shows this one under **Salvos**.
 
 Not rate limited, and `no-store`: the list changes the moment an ingestion finishes.
 
@@ -100,7 +127,7 @@ Not rate limited, and `no-store`: the list changes the moment an ingestion finis
 
 ## `DELETE /api/v1/videos/{videoId}/keep`
 
-Marks a video to outlive the retention window, or stops keeping it.
+Marks a video as one to keep, or stops keeping it.
 
 ```http
 204 No Content
@@ -126,12 +153,81 @@ Distinct from `job-not-found`, and the distinction is load-bearing: a job expiri
 lives is the ordinary state of every older video, so reporting one as the other would tell a client
 to retry an ingestion that is not the problem.
 
-Keeping exempts the HLS ladder only. The raw torrent under `downloads/` is reaped on schedule
-either way ([ADR-0019](decisions/0019-kept-videos-outlive-the-retention-window.md)).
+What keeping buys is the `409` on delete described below. It used to exempt the ladder from an
+hourly reaper; nothing reaps the ladder now
+([ADR-0030](decisions/0030-the-library-is-not-a-cache.md)).
 
 **Not rate limited.** The limiter is registered on the exact path `/api/v1/videos`, which does not
 match this one. That is deliberate — the limit exists because an ingestion costs hours of CPU and
 gigabytes of disk, and writing a marker file costs neither.
+
+## `DELETE /api/v1/videos/{videoId}`
+
+Deletes a video: its HLS ladder, the raw torrent it came from, its job record and its magnet claim.
+
+```http
+204 No Content
+```
+
+**The only way media leaves the disk.** Nothing expires, so a library that is filling up empties
+because someone emptied it ([ADR-0030](decisions/0030-the-library-is-not-a-cache.md)).
+
+Releasing the magnet claim is the part worth knowing about: without it, re-adding the same magnet
+would be deduplicated onto the id you just deleted, and the caller would get a video that does not
+exist. After a delete, the same magnet starts a fresh ingestion under a new id.
+
+A video marked as kept is refused:
+
+```http
+409 Conflict
+Content-Type: application/problem+json
+
+{
+  "type": "https://aztcast.dev/problems/video-is-kept",
+  "title": "Video is kept",
+  "status": 409,
+  "detail": "Video 2724a02c-… is marked as kept; repeat the request with force=true to delete it"
+}
+```
+
+`409` rather than `403`, because nothing is forbidden — the request conflicts with a state the
+caller can see in the listing and can change, either by un-keeping the video or by repeating the
+request as `DELETE /api/v1/videos/{videoId}?force=true`.
+
+An id with nothing on disk under it is a `video-not-found` `404`, in the same shape as the keep
+endpoints above. A half-finished ingestion — a download with no ladder yet — deletes successfully:
+either directory existing is enough.
+
+**Not rate limited,** for the same reason keeping is not. The limiter exists because an ingestion
+costs hours of CPU and gigabytes of disk; this returns them.
+
+## `GET /api/v1/storage`
+
+How much room the media volume has, and how much of it the library is using.
+
+```http
+200 OK
+Cache-Control: no-store
+
+{
+  "usableBytes": 624008581120,
+  "totalBytes": 998037782528,
+  "mediaBytes": 13048576,
+  "videoCount": 1,
+  "minFreeBytes": 2147483648
+}
+```
+
+Exists because nothing prunes itself: the disk is the only limit the library has, so it should be
+readable before an ingestion is refused at the floor rather than after.
+
+`usableBytes` and `totalBytes` are **`null`**, not `0`, when the filesystem could not be read. The
+distinction matters — "no answer" and "no room" are different, and only one of them is a reason to
+stop. An unreadable filesystem does not refuse ingestions.
+
+`mediaBytes` counts the HLS ladders, the same per-video `sizeBytes` the listing reports, summed. It
+does not include raw downloads in flight. `minFreeBytes` is the floor `POST /api/v1/videos` refuses
+below, so a client can show how close it is; `0` means the check is disabled.
 
 ## `GET /api/v1/videos/active`
 
@@ -370,10 +466,11 @@ separately would stack them invisibly and imply a precision the data does not ha
 while MaxMind's GeoLite2 City does. Clients should say the location is approximate either
 way.
 
-**`available: false`** means the video is not in the on-disk catalogue — either the reaper
-took it (peer rows live 30 days, media 7, so this is the normal end state of an old
-ingestion) or its transcode never finished. It is not an error, and the row is still worth
-showing: the record of where something came from outlives the something.
+**`available: false`** means the video is not in the on-disk catalogue — either someone deleted
+it, or its transcode never finished. Peer rows expire on their own 30-day window while media does
+not expire at all, so this now means a deliberate deletion far more often than it means age. It is
+not an error, and the row is still worth showing: the record of where something came from outlives
+the something.
 
 **`addressPeersSee`** is the address remote peers report seeing us as, from the `yourip`
 field of their extended handshake. Absent until some peer sends one. It is the only direct
@@ -454,5 +551,11 @@ job endpoint to poll. See
 ## Not implemented
 
 There is **no authentication**. Anyone who can reach `POST /api/v1/videos` can
-make the server download arbitrary torrents and consume its disk. Do not expose
-this service to an untrusted network.
+make the server download arbitrary torrents and consume its disk. The service
+binds to `127.0.0.1` by default and refuses hosts it was not configured for, so
+"anyone" is normally the person at the keyboard — but that is a smaller port, not
+a closed door. Do not expose this service to an untrusted network.
+
+The magnet body is validated for being non-blank and nothing else: no scheme
+check, no infohash requirement, and no filtering of the `&x.pe=` peer addresses or
+`&tr=` trackers it carries, both of which the engine will dial.

@@ -122,6 +122,11 @@ WEB_PORT=8100 docker compose -f deploy/docker-compose.yml up --build -d
 
 nginx serves the player and proxies `/api` to the API on the same origin.
 
+Published on `127.0.0.1`, not `0.0.0.0`. To reach it from another device, set
+`WEB_BIND=0.0.0.0` *and* add the address you type in the browser to
+`aztcast.streaming.web.allowed-hosts`, or the Host check refuses it with a 403.
+Both are deliberate, and the [security section](#security) says why.
+
 #### Through a VPN
 
 ```bash
@@ -188,15 +193,22 @@ what the browser accepts and what the server actually serves.
 The library is read from disk rather than from job state, so a video is listed for
 as long as its media exists — a restart that loses every job record does not empty
 it. Search and sort act on the listing in the browser, not as a query: the endpoint
-returns everything on disk and the retention window keeps that small.
+returns everything on disk, and filtering an array already in the page beats a round
+trip per keystroke.
 
-**Videos you save are not deleted.** Media older than the retention window is reaped
-automatically, which is what keeps the disk from filling; the marker in the corner of
-each card exempts that video from it, and the **Salvos** filter shows only the ones
-you have marked. What persists is the watchable ladder — the raw torrent underneath it
-still expires on schedule, because it is a second full copy of the same video and
-nothing seeds it
-([ADR-0019](docs/decisions/0019-kept-videos-outlive-the-retention-window.md)).
+**Nothing deletes your videos.** They are on your disk, you asked for them, and they
+stay until you say otherwise — so the delete control on each card is the only way
+media ever leaves, and it takes two clicks. The marker beside it makes a video
+*Salvo*: deleting one asks again, and the **Salvos** filter shows only the ones you
+have marked. What does get cleaned up on its own is the raw torrent underneath the
+video, discarded as soon as the transcode is verified: it is a second full copy of
+the same video, nothing seeds it, and repair goes back to the magnet rather than to
+those bytes ([ADR-0030](docs/decisions/0030-the-library-is-not-a-cache.md)).
+
+Since nothing prunes itself, the toolbar carries what the library occupies and what
+is free, and an ingestion that would start below
+`aztcast.streaming.storage.min-free-space` is refused rather than filling the disk
+halfway through.
 
 Paste a magnet link on the library page and press **Enviar** to add one. It polls
 the job with a backoff and opens the watch page once it is `READY`; a failure shows
@@ -576,21 +588,52 @@ when the thing being compared is area.
 
 ## Security
 
-**There is no authentication.** Anyone who can reach `POST /api/v1/videos` can
-make this server download arbitrary torrents. Run it on a trusted network only.
-Adding authentication is still the most valuable next change.
+This runs on your machine and has two surfaces with opposite needs. The
+BitTorrent port has to face the internet — peers behind a NAT cannot dial you
+otherwise, and the swarm sees your address either way ([ADR-0015](docs/decisions/0015-ip-masking-belongs-to-the-network.md)
+covers that half, and the [VPN overlay](deploy/docker-compose.vpn.yml) is the
+answer to it). The HTTP surface has no such need, and it is the one that starts
+downloads and deletes videos. So it does not face outward
+([ADR-0031](docs/decisions/0031-only-the-swarm-faces-outward.md)).
+
+**The API binds to loopback, and so does the published web port.** Serving the
+LAN takes two deliberate changes — `WEB_BIND` or `server.address`, *and* an entry
+in `aztcast.streaming.web.allowed-hosts`. Changing only the first gives you a 403,
+which is the check working rather than a bug.
+
+**Loopback is not a boundary a browser respects, so two more checks close that.**
+A page you visit can rebind its own DNS name to `127.0.0.1` and reach a local
+service as same-origin — the same-origin policy is not violated, it is satisfied
+on the attacker's terms. A `Host` allowlist refuses that, because the name the
+page had to use is the one thing it cannot forge. And CORS does not stop a `POST`
+from *happening*, only from being read, so state-changing requests carrying a
+foreign `Origin` are refused too. A request with no `Origin` at all is untouched:
+that is `curl`, and leaving it alone is the point — nothing here asks you for a
+password.
+
+**There is still no authentication.** Anyone who can reach `POST /api/v1/videos`
+can make this server download arbitrary torrents; what changed is who can reach
+it. Adding authentication is still the most valuable next change, and it is now
+the difference between "safe on your machine" and "safe anywhere".
 
 Rate limiting bounds that, it does not close it: a caller is limited, not
-identified. It needs Redis — without it there is no shared counter and so no
-honest limit.
+identified. It needs Redis, which is **off by default** — so the shipped
+configuration has no limit at all, and only the `docker` profile does. Where it
+is on, nginx sets `X-Forwarded-For` to `$remote_addr` rather than appending to
+it, so a client cannot choose its own rate-limit bucket by sending its own
+header.
 
-Two things that are handled: media older than
-`aztcast.streaming.storage.retention` (7d) is deleted automatically, so filling
-the disk now takes sustained effort rather than one afternoon — saved videos are
-exempt from that by design, so an instance where everything is saved will still
-fill up; and nginx sets
-`X-Forwarded-For` to `$remote_addr` rather than appending to it, so a client
-cannot choose its own rate-limit bucket by sending its own header.
+**The magnet is barely validated, and that is a real gap.** It is checked for
+being non-blank and nothing else. A caller-supplied `&x.pe=` is handed to the
+engine, so whoever can call the endpoint can make it dial an arbitrary
+`IP:port` — loopback and private ranges included — and `&tr=` is filtered by a
+denylist rather than an allowlist. Binding to loopback narrows "whoever" to you,
+which is why this is a gap rather than an emergency. It is not fixed.
+
+**Nothing deletes your videos.** A full disk is now your business rather than the
+reaper's: ingestion is refused below `aztcast.streaming.storage.min-free-space`
+(2 GB) instead of filling the volume, and the library shows what is left
+([ADR-0030](docs/decisions/0030-the-library-is-not-a-cache.md)).
 
 Also note this project downloads whatever magnet link it is given; what you
 choose to fetch with it is your responsibility.

@@ -49,7 +49,8 @@ public interface MediaStorage {
      * has already reduced the directory to the one file that was wanted. Picking wrongly is not
      * dangerous either — ffprobe rejects a non-media file and the caller falls back to re-fetching.
      *
-     * <p>Empty means the source is gone, which is the normal state seven days after an ingestion.
+     * <p>Empty means the source is gone, which is the normal state for any video whose transcode
+     * finished: the download is discarded as soon as the ladder it produced is verified.
      */
     Optional<Path> existingDownload(String videoId);
 
@@ -68,6 +69,40 @@ public interface MediaStorage {
      * @return whether anything was removed
      */
     boolean discardIncompleteHls(String videoId);
+
+    /**
+     * Deletes the raw torrent downloaded for {@code videoId}.
+     *
+     * <p>Called once a transcode is verified, and by the reaper for downloads no transcode ever
+     * claimed. Unlike {@link #discardIncompleteHls} there is no sentinel to check first, because
+     * there is no state of this directory worth protecting: it is a second full copy of a video that
+     * is not what anyone watches, nothing seeds it, and repair goes back to the recorded magnet
+     * rather than to these bytes.
+     *
+     * @return whether anything was removed
+     */
+    boolean discardDownload(String videoId);
+
+    /**
+     * Deletes the HLS ladder for {@code videoId}, finished or not.
+     *
+     * <p>The one place in the application that removes a watchable video, and it exists only to
+     * serve a person who asked for exactly that. Nothing schedules it. {@link #discardIncompleteHls}
+     * remains the safe, sentinel-guarded call for the pipeline's own cleanup; this one deliberately
+     * has no guard, so it must never be reached except from an explicit request.
+     *
+     * @return whether anything was removed
+     */
+    boolean discardHls(String videoId);
+
+    /**
+     * How much room the volume holding the media roots has.
+     *
+     * <p>Empty when the filesystem cannot be queried. That is deliberately distinct from zero free —
+     * a caller deciding whether to refuse work must be able to tell "no room" from "no answer", and
+     * refusing an ingestion because a stat call failed would be the wrong way to be careful.
+     */
+    Optional<VolumeSpace> volumeSpace();
 
     /**
      * Directories of videos whose ladder is complete, i.e. whose master playlist exists.

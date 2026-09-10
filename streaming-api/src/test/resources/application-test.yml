@@ -4,7 +4,8 @@ aztcast:
     storage:
       downloads-dir: ${java.io.tmpdir}/aztcast-test/downloads
       hls-dir: ${java.io.tmpdir}/aztcast-test/hls
-      retention: 7d
+      download-retention: 24h
+      min-free-space: 0B
     ffmpeg:
       binary: /bin/true
       video-codec: libx264
@@ -37,3 +38,5 @@ aztcast:
         refill-per-hour: 20
     web:
       allowed-origins: []
+      # Off by default in tests; the slices that exercise it set it explicitly.
+      allowed-hosts: []

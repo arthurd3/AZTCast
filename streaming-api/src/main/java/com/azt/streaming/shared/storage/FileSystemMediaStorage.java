@@ -4,6 +4,7 @@ import com.azt.streaming.shared.config.StreamingProperties;
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.FileStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
@@ -122,6 +123,47 @@ public class FileSystemMediaStorage implements MediaStorage {
             log.info("Discarded the incomplete HLS output for videoId {}", videoId);
         }
         return removed;
+    }
+
+    @Override
+    public boolean discardDownload(String videoId) {
+        return discard(downloadsRoot, videoId, "download");
+    }
+
+    @Override
+    public boolean discardHls(String videoId) {
+        return discard(hlsRoot, videoId, "HLS ladder");
+    }
+
+    private boolean discard(Path root, String videoId, String what) {
+        Path directory;
+        try {
+            directory = requireInside(root, videoId, "");
+        } catch (IllegalArgumentException e) { // InvalidPathException is a subclass
+            log.warn("Refusing to discard a {} outside the media root: videoId={}", what, videoId);
+            return false;
+        }
+        // Containment is checked above, but an id that resolves to the root itself would pass it and
+        // take every video with it. Only a directory strictly inside the root is ever removed.
+        if (directory.equals(root) || !Files.isDirectory(directory)) {
+            return false;
+        }
+        boolean removed = MediaDirectories.deleteRecursively(directory);
+        if (removed) {
+            log.info("Discarded the {} for videoId {}", what, videoId);
+        }
+        return removed;
+    }
+
+    @Override
+    public Optional<VolumeSpace> volumeSpace() {
+        try {
+            FileStore store = Files.getFileStore(downloadsRoot);
+            return Optional.of(new VolumeSpace(store.getTotalSpace(), store.getUsableSpace()));
+        } catch (IOException e) {
+            log.warn("Could not read the free space on the volume holding {}", downloadsRoot, e);
+            return Optional.empty();
+        }
     }
 
     @Override

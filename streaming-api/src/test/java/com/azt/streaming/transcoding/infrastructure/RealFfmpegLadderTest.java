@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.azt.streaming.shared.config.StreamingProperties;
 import com.azt.streaming.shared.storage.MediaStorage;
+import com.azt.streaming.shared.storage.VolumeSpace;
 import com.azt.streaming.support.PropertiesFixture;
 import com.azt.streaming.transcoding.domain.FfmpegSupport;
 import com.azt.streaming.transcoding.domain.HlsRendition;
@@ -472,6 +473,21 @@ class RealFfmpegLadderTest {
             @Override
             public Optional<Path> resolveHlsAsset(String videoId, String fileName) {
                 return Optional.of(hlsDirectory.resolve(fileName));
+            }
+
+            @Override
+            public boolean discardDownload(String videoId) {
+                return false;
+            }
+
+            @Override
+            public boolean discardHls(String videoId) {
+                return false;
+            }
+
+            @Override
+            public Optional<VolumeSpace> volumeSpace() {
+                return Optional.empty();
             }
 
             @Override
