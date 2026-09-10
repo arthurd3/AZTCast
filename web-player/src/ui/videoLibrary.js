@@ -228,8 +228,9 @@ export function createVideoLibrary(
 
     function paint() {
       toggle.classList.toggle('video-card__delete--armed', armed);
-      const label = armed ? `Confirmar exclusão de ${label(video)}` : `Excluir ${label(video)}`;
-      toggle.setAttribute('aria-label', label);
+      const name = label(video);
+      const text = armed ? `Confirmar exclusão de ${name}` : `Excluir ${name}`;
+      toggle.setAttribute('aria-label', text);
       toggle.title = armed ? 'Clique de novo para excluir' : 'Excluir';
       toggle.replaceChildren(icon(armed ? 'check' : 'trash', 'video-card__delete-icon'));
     }
