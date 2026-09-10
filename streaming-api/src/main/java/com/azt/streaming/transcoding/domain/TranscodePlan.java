@@ -17,7 +17,17 @@ import java.util.stream.Collectors;
  * @param framesPerSegment GOP length in frames, or 0 when the frame rate was not reported
  */
 public record TranscodePlan(
-        List<PlannedRendition> renditions, AudioPlan audio, List<SubtitlePlan> subtitles, int framesPerSegment) {
+        List<PlannedRendition> renditions,
+        AudioPlan audio,
+        List<SubtitlePlan> subtitles,
+        int framesPerSegment,
+        int threadsPerRung) {
+
+    /** A plan that lets each encoder size its own thread pool, which is ffmpeg's default. */
+    public TranscodePlan(
+            List<PlannedRendition> renditions, AudioPlan audio, List<SubtitlePlan> subtitles, int framesPerSegment) {
+        this(renditions, audio, subtitles, framesPerSegment, 0);
+    }
 
     public TranscodePlan {
         renditions = List.copyOf(renditions);

@@ -79,6 +79,7 @@ public record StreamingProperties(
             @NotBlank String videoCodec,
             @NotEmpty List<String> videoCodecPreference,
             @NotBlank String preset,
+            @NotBlank String encoderThreads,
             @NotNull Duration timeout,
             @NotNull Duration segmentDuration,
             @NestedConfigurationProperty @Valid @NotNull Audio audio,
@@ -91,6 +92,27 @@ public record StreamingProperties(
 
         public boolean autoVideoCodec() {
             return AUTO.equalsIgnoreCase(videoCodec);
+        }
+
+        /**
+         * Whether the encoder thread count is sized from the host rather than pinned.
+         *
+         * <p>{@code auto} divides a budget of roughly 1.75 threads per core across the ladder's
+         * encoded rungs. {@code 0} restores ffmpeg's own behaviour, where each encoder sizes itself
+         * and knows nothing about the others — which is fine on a workstation and measurably bad on
+         * anything small.
+         */
+        public boolean autoEncoderThreads() {
+            return "auto".equalsIgnoreCase(encoderThreads);
+        }
+
+        /** The pinned thread count, or 0 when {@code auto} is in force. */
+        public int encoderThreadsOrZero() {
+            try {
+                return autoEncoderThreads() ? 0 : Math.max(0, Integer.parseInt(encoderThreads.trim()));
+            } catch (NumberFormatException e) {
+                return 0;
+            }
         }
 
         public boolean autoPreset() {

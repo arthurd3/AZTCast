@@ -31,6 +31,7 @@ public final class PropertiesFixture {
         private Path downloadsDir = Path.of("target/test/downloads");
         private Path hlsDir = Path.of("target/test/hls");
         private Duration downloadRetention = Duration.ofHours(24);
+        private String encoderThreads = "auto";
         private StreamingProperties.Engine engine = StreamingProperties.Engine.EMBEDDED;
         private Path engineSocket = Path.of("/run/aztcast/engine.sock");
         private DataSize minFreeSpace = DataSize.ofBytes(0);
@@ -176,6 +177,11 @@ public final class PropertiesFixture {
             return this;
         }
 
+        public Builder encoderThreads(String value) {
+            this.encoderThreads = value;
+            return this;
+        }
+
         public Builder engine(StreamingProperties.Engine value) {
             this.engine = value;
             return this;
@@ -195,6 +201,7 @@ public final class PropertiesFixture {
                             videoCodec,
                             List.of("libx264", "libopenh264"),
                             preset,
+                            encoderThreads,
                             ffmpegTimeout,
                             segmentDuration,
                             new StreamingProperties.Audio(
