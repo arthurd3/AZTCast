@@ -107,10 +107,25 @@ WARN  Audio for videoId …: this ffmpeg build has no eac3 decoder;
 | `ac3` `eac3` `flac` `alac` `opus` | no | **copied through**, real CODECS (`ec-3`, `ac-3`, …) |
 | `dts` `truehd` | no | dropped; video-only ladder |
 
-A copied E-AC-3 track plays on Safari, iOS and tvOS and is silent on Chrome and
-Firefox. The master playlist says `ec-3`, so a player that cannot handle it knows
-before it fetches a segment. It also puts a 640 kbps floor under every rung, which
-makes the bottom of the ladder much less useful for adaptation.
+A copied E-AC-3 track plays on Safari, iOS and tvOS. Everywhere else the video
+plays **silently** — and getting that right took a second attempt, because a
+variant's `CODECS` attribute describes the whole combination it would assemble:
+
+```
+MediaSource.isTypeSupported('video/mp4; codecs="avc1.640028"')        → true
+MediaSource.isTypeSupported('audio/mp4; codecs="ec-3"')              → false
+MediaSource.isTypeSupported('video/mp4; codecs="avc1.640028,ec-3"')  → false
+```
+
+An audio codec the browser lacks does not cost it the audio, it disqualifies the
+whole variant — so the first version of this left Chrome with zero playable levels
+and `manifestIncompatibleCodecsError`. Every rung is now advertised twice, once
+joined to the audio group and once video-only, from the same files. See
+[ADR-0025](decisions/0025-a-ladder-the-browser-accepts.md).
+
+Passthrough also puts a 640 kbps floor under every rung that carries the audio,
+which makes the bottom of that family much less useful for adaptation. The
+video-only family is not affected: its 240p rung costs 530 kbps rather than 1,171.
 
 To decode it here instead — which gives 128 kbps AAC on every rung and removes the
 floor — install a full ffmpeg. `./scripts/check-prereqs.sh` names the package for
@@ -143,3 +158,25 @@ It cannot hit a target bitrate without dropping frames, and dropping frames is w
 The manifest tells the truth about what it produced, which is what keeps a player from
 choosing a rung it cannot sustain. `libx264` holds its targets; `check-prereqs.sh` will
 say whether this host has it.
+
+## A video that used to play and now does not
+
+Something removed or truncated its media, or it was published by a version of this
+service whose manifests a browser refuses. Ask the API which:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/videos/<videoId>/repair
+```
+
+It inspects what is published and does the cheapest thing that fixes it — rewriting
+the manifests when the segments are intact, transcoding again from the retained
+download when they are not, and re-fetching the torrent when that download has been
+reaped too. **The videoId never changes**, so every existing link keeps working.
+
+`200` means there was nothing to do. `202` means work started, and the job is
+followable on `GET /api/v1/videos/{videoId}` exactly like an ingestion. `422` means
+the media is incomplete, the download is gone, and no magnet was recorded — which is
+the state of anything ingested before the sidecar carried one.
+
+In the player, a fatal **network** error grows a **Reparar** button. A codec error
+does not, because there is nothing on the server to repair.

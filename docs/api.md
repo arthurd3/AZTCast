@@ -197,6 +197,45 @@ than how an ingestion went, use [`GET /api/v1/videos`](#get-apiv1videos). See
 [ADR-0009](decisions/0009-redis-for-state-not-for-media.md) and
 [ADR-0011](decisions/0011-the-library-replaces-manual-id-entry.md).
 
+### `POST /api/v1/videos/{videoId}/repair`
+
+Puts a video that stopped working back together, **under the same id**.
+
+POST rather than PUT: what it costs depends on what is wrong, from rewriting a
+playlist to fetching the torrent again.
+
+```http
+202 Accepted
+Location: /api/v1/videos/29dd7faa-3d34-48e2-abd4-732ed5b9abe5
+
+{
+  "videoId": "29dd7faa-3d34-48e2-abd4-732ed5b9abe5",
+  "action": "MANIFESTS_REBUILT",
+  "detail": "The media was intact and the playlists were not. Rebuilding the manifests, which takes seconds and re-encodes nothing."
+}
+```
+
+| `action` | Meaning | Cost |
+| --- | --- | --- |
+| `NOTHING_TO_DO` | The ladder is complete and playable. Answered `200`, no `Location`. | — |
+| `MANIFESTS_REBUILT` | Segments are intact; only the playlists were wrong. | seconds |
+| `RETRANSCODED` | Segments were missing; the retained download is being transcoded again. | minutes |
+| `REFETCHED` | The download was gone too; the torrent is being fetched from the recorded magnet. | a download plus an encode |
+
+Everything but `NOTHING_TO_DO` answers `202` and writes a job under the same
+videoId, so a client follows it with
+[`GET /api/v1/videos/{videoId}`](#get-apiv1videosvideoid) exactly as it follows an
+ingestion.
+
+`404` if there is no video for that id. `422` with
+`type: https://aztcast.dev/problems/not-repairable` when the media is incomplete,
+the download has been reaped and no magnet was recorded — which is the state of
+anything ingested before the sidecar carried one.
+
+Rate limited, unlike `/keep`: at its most expensive this spends a full download and
+a full encode. See
+[ADR-0026](decisions/0026-verified-before-it-is-published-repairable-after.md).
+
 ## Providers
 
 Present only when `aztcast.streaming.providers.enabled` is set. Both endpoints `404`
