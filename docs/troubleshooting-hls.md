@@ -180,3 +180,57 @@ the state of anything ingested before the sidecar carried one.
 
 In the player, a fatal **network** error grows a **Reparar** button. A codec error
 does not, because there is nothing on the server to repair.
+
+## The audio is quieter, or thinner, than the source
+
+It is not any more, but it was: the pipeline used to fold every track to stereo at
+128 kbps regardless of what arrived. A 5.1 track at 640 kbps lost four channels and
+four fifths of its bitrate on the way in.
+
+`aztcast.streaming.ffmpeg.audio` now defaults to `channels: source` and
+`sample-rate: source`, with the bitrate scaled per channel — 128k in stereo, 384k at
+5.1. Multichannel AAC is decoded by every mainstream browser, which folds it down
+using the viewer's own output configuration rather than a guess made here.
+
+To check what a published video actually carries:
+
+```bash
+ffprobe -v error -select_streams a:0 \
+  -show_entries stream=codec_name,channels,sample_rate \
+  -of default=nw=1 var/hls/<videoId>/audio.m3u8
+```
+
+A video published before this, or on a host without a decoder, is caught up by
+`POST /api/v1/videos/{videoId}/repair`, which re-encodes only the audio rendition —
+seconds, not a full transcode. See
+[ADR-0027](decisions/0027-audio-keeps-the-channels-the-source-had.md).
+
+## Known: hls.js stalls on the demuxed audio group
+
+**Open.** With an audio group whose codec the browser accepts, hls.js loads the
+master, the level playlist and `audio.m3u8`, logs `2 bufferCodec event(s) expected`,
+and then both stream controllers sit in IDLE without loading a single fragment. No
+error is raised, so nothing surfaces in the player beyond a spinner.
+
+The output is not the problem. ffmpeg's own HLS demuxer assembles the same master
+correctly:
+
+```bash
+ffmpeg -i var/hls/<videoId>/master.m3u8 -f null -
+# Stream #0:0(en): Audio: aac (LC), 48000 Hz, 5.1, 385 kb/s (default)
+# Stream #0:5(eng): Video: h264 (High), 1920x1080 ...
+```
+
+This path had never run in a browser before: prior to
+[ADR-0025](decisions/0025-a-ladder-the-browser-accepts.md) the `ec-3` codec made
+Chrome reject every variant, and after it Chrome took the video-only family, which
+references no audio group. The shared-audio design has therefore been latent since
+[ADR-0021](decisions/0021-one-audio-rendition-shared-by-every-rung.md).
+
+It is **not** a timeline offset introduced by the audio-only repair: a ladder built
+in one ffmpeg invocation already puts the video renditions at 0.083 and the audio at
+0.062, so a small offset between demuxed renditions is inherent to `hlsenc`.
+
+The fallback, if this turns out to be ours rather than hls.js's, is muxing the audio
+back into every variant — roughly 325 MB of duplicated audio per 22-minute episode at
+5.1, which is why it is not the first move.

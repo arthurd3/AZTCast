@@ -218,6 +218,7 @@ Location: /api/v1/videos/29dd7faa-3d34-48e2-abd4-732ed5b9abe5
 | `action` | Meaning | Cost |
 | --- | --- | --- |
 | `NOTHING_TO_DO` | The ladder is complete and playable. Answered `200`, no `Location`. | — |
+| `AUDIO_REBUILT` | The ladder is intact, and this host can now produce better audio than it carries — typically because a decoder was installed since the ingestion. Only the audio rendition is re-encoded. | ~seconds |
 | `MANIFESTS_REBUILT` | Segments are intact; only the playlists were wrong. | seconds |
 | `RETRANSCODED` | Segments were missing; the retained download is being transcoded again. | minutes |
 | `REFETCHED` | The download was gone too; the torrent is being fetched from the recorded magnet. | a download plus an encode |
