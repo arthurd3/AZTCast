@@ -45,7 +45,20 @@ public class ProcessRunner {
      * @throws TranscodingException if the command fails, times out, or the thread is interrupted
      */
     public void run(List<String> command, Duration timeout) {
-        execute(command, timeout, null);
+        execute(command, timeout, null, line -> {});
+    }
+
+    /**
+     * Runs {@code command} and shows every line of its output to {@code watcher} as it arrives.
+     *
+     * <p>For {@code ffmpeg -progress pipe:1}, whose whole value is being read while the process is
+     * still running. The watcher runs on the drain thread, so it must not block: anything slow there
+     * stops the pipe being emptied, and a pipe nobody empties is a process that hangs.
+     *
+     * @throws TranscodingException if the command fails, times out, or the thread is interrupted
+     */
+    public void run(List<String> command, Duration timeout, Consumer<String> watcher) {
+        execute(command, timeout, null, watcher);
     }
 
     /**
@@ -60,7 +73,7 @@ public class ProcessRunner {
      */
     public String runCapturing(List<String> command, Duration timeout) {
         StringBuilder captured = new StringBuilder();
-        execute(command, timeout, captured);
+        execute(command, timeout, captured, line -> {});
         return captured.toString();
     }
 
@@ -68,7 +81,8 @@ public class ProcessRunner {
      * @param captured when null, stderr is merged into stdout and only the tail is kept; when
      *     non-null, the streams are separate and stdout is appended here
      */
-    private void execute(List<String> command, Duration timeout, StringBuilder captured) {
+    private void execute(
+            List<String> command, Duration timeout, StringBuilder captured, Consumer<String> watcher) {
         log.debug("Running: {}", String.join(" ", command));
 
         boolean merged = captured == null;
@@ -77,10 +91,8 @@ public class ProcessRunner {
 
         // Drained on separate threads: reading in the calling thread would block past the deadline
         // if the process goes quiet without exiting, and would deadlock on a full pipe.
-        Thread drainOut = drainThread(
-                process.getInputStream(),
-                "out-" + process.pid(),
-                merged ? line -> keepTail(tail, line) : line -> capture(captured, line));
+        Consumer<String> stdout = merged ? line -> keepTail(tail, line) : line -> capture(captured, line);
+        Thread drainOut = drainThread(process.getInputStream(), "out-" + process.pid(), stdout.andThen(watcher));
 
         // With the streams unmerged, stderr has its own pipe, and a pipe nobody drains is a hang
         // rather than a lost message — ffmpeg alone can fill it before it produces a frame.
@@ -90,7 +102,8 @@ public class ProcessRunner {
         try {
             if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
                 destroy(process);
-                throw new TranscodingException("%s timed out after %s".formatted(command.getFirst(), timeout));
+                throw new TranscodingException("%s timed out after %s:%n%s"
+                        .formatted(command.getFirst(), timeout, joinTail(tail)));
             }
             drainOut.join(REAP_GRACE.toMillis());
             if (drainErr != null) {
@@ -100,13 +113,27 @@ public class ProcessRunner {
             int exitCode = process.exitValue();
             if (exitCode != 0) {
                 throw new TranscodingException("%s exited with code %d:%n%s"
-                        .formatted(command.getFirst(), exitCode, String.join("\n", tail)));
+                        .formatted(command.getFirst(), exitCode, joinTail(tail)));
             }
         } catch (InterruptedException e) {
             destroy(process);
             // Restore the flag: swallowing it left callers unable to see the cancellation.
             Thread.currentThread().interrupt();
             throw new TranscodingException("Interrupted while running " + command.getFirst(), e);
+        }
+    }
+
+    /**
+     * The kept tail as one block, read under the same monitor that writes it.
+     *
+     * <p>Joining it unsynchronised raced the drain thread: on the timeout path that thread is still
+     * running when the message is built, and {@code String.join} over a deque being mutated throws
+     * {@link java.util.ConcurrentModificationException} — turning a useful timeout diagnostic into
+     * an unrelated crash.
+     */
+    private static String joinTail(Deque<String> tail) {
+        synchronized (tail) {
+            return String.join("\n", tail);
         }
     }
 

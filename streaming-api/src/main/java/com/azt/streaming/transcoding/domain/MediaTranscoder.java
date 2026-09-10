@@ -2,6 +2,7 @@ package com.azt.streaming.transcoding.domain;
 
 import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.IntConsumer;
 
 /**
  * Stage two of the pipeline: turn a media file into an HLS rendition ladder.
@@ -19,11 +20,13 @@ import java.util.concurrent.CompletableFuture;
 public interface MediaTranscoder {
 
     /**
-     * Transcodes {@code inputFile} into the configured HLS ladder under {@code videoId}.
+     * Transcodes {@code inputFile} into an HLS ladder suited to it, under {@code videoId}.
      *
+     * @param onProgress called with whole percentages as the encode advances. Invoked from the
+     *     process's output-drain thread, so it must not block — see {@code FfmpegProgress}.
      * @return a future that completes when every rendition and the master playlist are written, or
      *     completes exceptionally if any rung fails. Callers must chain it — discarding it is how
      *     transcoding failures used to disappear silently.
      */
-    CompletableFuture<Void> transcodeToHls(Path inputFile, String videoId);
+    CompletableFuture<Void> transcodeToHls(Path inputFile, String videoId, IntConsumer onProgress);
 }

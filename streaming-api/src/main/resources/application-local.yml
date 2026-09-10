@@ -20,11 +20,6 @@ aztcast:
       geoip-city-database: ./var/geoip/dbip-city-lite.mmdb
       geoip-asn-database: ./var/geoip/dbip-asn-lite.mmdb
 
-    # Fedora and other patent-free ffmpeg builds ship libopenh264, not libx264.
-    # Check yours with: ffmpeg -encoders | grep 264
-    ffmpeg:
-      video-codec: libopenh264
-
 management:
   endpoint:
     health:

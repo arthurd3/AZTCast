@@ -88,7 +88,7 @@ public class MediaReaper {
         }
         int removed = 0;
         for (Path directory : expired) {
-            if (deleteRecursively(directory)) {
+            if (MediaDirectories.deleteRecursively(directory)) {
                 removed++;
             }
         }
@@ -130,16 +130,4 @@ public class MediaReaper {
         }
     }
 
-    private boolean deleteRecursively(Path directory) {
-        try (Stream<Path> tree = Files.walk(directory)) {
-            // Reverse order so children are removed before their parents.
-            for (Path path : tree.sorted(Comparator.reverseOrder()).toList()) {
-                Files.deleteIfExists(path);
-            }
-            return true;
-        } catch (IOException e) {
-            log.warn("Could not delete {}", directory, e);
-            return false;
-        }
-    }
 }

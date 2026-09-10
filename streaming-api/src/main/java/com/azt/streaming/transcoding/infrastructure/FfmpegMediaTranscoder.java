@@ -3,13 +3,17 @@ package com.azt.streaming.transcoding.infrastructure;
 import com.azt.streaming.shared.config.AsyncConfiguration;
 import com.azt.streaming.shared.config.StreamingProperties;
 import com.azt.streaming.shared.storage.MediaStorage;
+import com.azt.streaming.transcoding.domain.AudioPlan;
+import com.azt.streaming.transcoding.domain.EncodedAudio;
 import com.azt.streaming.transcoding.domain.EncodedRendition;
 import com.azt.streaming.transcoding.domain.HlsRendition;
-import com.azt.streaming.transcoding.domain.LadderPlanner;
 import com.azt.streaming.transcoding.domain.MediaProbe;
 import com.azt.streaming.transcoding.domain.MediaTranscoder;
 import com.azt.streaming.transcoding.domain.PlannedRendition;
+import com.azt.streaming.transcoding.domain.ProbedSource;
 import com.azt.streaming.transcoding.domain.ProbedVideo;
+import com.azt.streaming.transcoding.domain.SubtitlePlan;
+import com.azt.streaming.transcoding.domain.TranscodePlan;
 import com.azt.streaming.transcoding.domain.TranscodingException;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -19,6 +23,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.IntConsumer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -31,38 +36,49 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
     /** How far into the source to look for a poster frame before falling back to the start. */
     private static final Duration POSTER_SEEK = Duration.ofSeconds(5);
 
+    /**
+     * A poster is one frame. Giving it the ladder's thirty-minute deadline meant a source that hung
+     * the decoder could spend an hour on thumbnails after the ladder had already succeeded.
+     */
+    private static final Duration POSTER_TIMEOUT = Duration.ofMinutes(2);
+
     private final MediaStorage mediaStorage;
     private final MediaProbe mediaProbe;
+    private final TranscodePlanner planner;
     private final FfmpegCommandBuilder commandBuilder;
     private final ProcessRunner processRunner;
     private final MasterPlaylistWriter masterPlaylistWriter;
-    private final List<HlsRendition> ladder;
+    private final SubtitlePublisher subtitlePublisher;
+    private final VariantWeigher variantWeigher;
     private final Duration timeout;
     private final MeterRegistry meterRegistry;
 
     public FfmpegMediaTranscoder(
             MediaStorage mediaStorage,
             MediaProbe mediaProbe,
+            TranscodePlanner planner,
             FfmpegCommandBuilder commandBuilder,
             ProcessRunner processRunner,
             MasterPlaylistWriter masterPlaylistWriter,
+            SubtitlePublisher subtitlePublisher,
+            VariantWeigher variantWeigher,
             MeterRegistry meterRegistry,
             StreamingProperties properties) {
         this.mediaStorage = mediaStorage;
         this.mediaProbe = mediaProbe;
+        this.planner = planner;
         this.commandBuilder = commandBuilder;
         this.processRunner = processRunner;
         this.masterPlaylistWriter = masterPlaylistWriter;
+        this.subtitlePublisher = subtitlePublisher;
+        this.variantWeigher = variantWeigher;
         this.meterRegistry = meterRegistry;
         this.timeout = properties.ffmpeg().timeout();
-        this.ladder = properties.ffmpeg().renditions().stream()
-                .map(r -> new HlsRendition(r.name(), r.width(), r.height(), r.videoBitrateKbps(), r.audioBitrateKbps()))
-                .toList();
     }
 
     @Override
     @Async(AsyncConfiguration.TRANSCODING_EXECUTOR)
-    public CompletableFuture<Void> transcodeToHls(Path inputFile, String videoId) {
+    public CompletableFuture<Void> transcodeToHls(Path inputFile, String videoId, IntConsumer onProgress) {
         log.info("Transcoding videoId {} from {}", videoId, inputFile);
 
         // Timed because the ladder went from two sequential rungs to five in one pass: whether that
@@ -77,28 +93,32 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
 
         Path videoDirectory = mediaStorage.hlsDirectoryFor(videoId);
         try {
-            // Probed before encoding for one decision that cannot be guessed: whether to map an
-            // audio track. `-map a:0` against a file that has none fails the entire encode, and a
-            // torrent is not a file we chose.
-            ProbedVideo source = mediaProbe.probe(inputFile);
+            ProbedSource source = mediaProbe.probeSource(inputFile);
             if (!source.hasVideo()) {
                 throw new TranscodingException("No video stream in " + inputFile);
             }
-            if (!source.hasAudio()) {
-                log.warn("Source for videoId {} has no audio track; encoding video only", videoId);
-            }
 
-            // The ladder that suits this source, not the one that was configured: never taller
-            // than what arrived, and with the top rung copied when the source is already H.264.
-            List<PlannedRendition> planned = LadderPlanner.plan(ladder, source);
-            rungs = planned.size();
-            log.info("Ladder for videoId {}: {}", videoId, describe(planned));
+            // Every decision about this file, made here, from the probe and from what this ffmpeg
+            // build can actually do. Whatever is impossible on this host is impossible now, in a
+            // sentence, rather than in forty lines of stack trace half an hour from now.
+            TranscodePlan plan = planner.plan(source);
+            rungs = plan.renditions().size();
+            log.info("Plan for videoId {}: {}", videoId, plan.describe());
+            if (plan.audio().reason() != null) {
+                log.warn("Audio for videoId {}: {}", videoId, plan.audio().reason());
+            }
 
             // One invocation for the whole ladder. The previous version ran one per rung, which
             // decoded the source once per rung.
-            processRunner.run(commandBuilder.build(inputFile, videoDirectory, planned, source.hasAudio()), timeout);
+            processRunner.run(
+                    commandBuilder.build(inputFile, videoDirectory, plan, planner.encoder()),
+                    timeout,
+                    new FfmpegProgress(source.durationSeconds(), onProgress));
 
-            List<EncodedRendition> encoded = measure(videoDirectory, planned, source.hasAudio());
+            List<SubtitlePlan> subtitles = subtitlePublisher.publish(
+                    inputFile, videoDirectory, plan.subtitles(), source.durationSeconds());
+            EncodedAudio audio = measureAudio(videoDirectory, plan.audio());
+            List<EncodedRendition> encoded = measure(videoDirectory, plan.renditions());
 
             // Before the master playlist, so a video is never listed without the thumbnail the
             // library expects to draw beside it.
@@ -106,7 +126,7 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
 
             // Written last, so its presence is the signal that the whole ladder is ready. Playback
             // 404s until this exists, which is exactly the behaviour the player expects.
-            masterPlaylistWriter.write(videoDirectory, encoded);
+            masterPlaylistWriter.write(videoDirectory, encoded, audio, subtitles);
 
             log.info("Transcoding complete for videoId {}", videoId);
             outcome = "success";
@@ -114,6 +134,14 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
         } catch (IOException e) {
             throw new TranscodingException("Failed to write HLS output for videoId " + videoId, e);
         } finally {
+            if (!"success".equals(outcome)) {
+                // A failed encode leaves partial segments, variant playlists for rungs that never
+                // finished, and no master playlist — invisible to the library, which lists only
+                // directories that have one, and charged to the disk until the reaper came for it a
+                // week later. Storage refuses to touch a directory that does have a master, so this
+                // can only ever remove something nothing could play.
+                mediaStorage.discardIncompleteHls(videoId);
+            }
             sample.stop(Timer.builder("aztcast.transcode")
                     .description("Wall-clock time to encode a full ladder")
                     .tag("outcome", outcome)
@@ -126,16 +154,16 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
      * Extracts the poster frame, and never fails the ingestion over it.
      *
      * <p>Two attempts. The first seeks in, because the opening seconds of a real file are titles,
-     * logos or black; the second starts from the beginning, because nothing here knows the source's
-     * duration and a clip shorter than the offset fails the seek outright. A video with no readable
-     * frame at all is still a video, so the third outcome is a warning and no poster.
+     * logos or black; the second starts from the beginning, because a clip shorter than the offset
+     * fails the seek outright. A video with no readable frame at all is still a video, so the third
+     * outcome is a warning and no poster.
      */
     private void writePoster(Path inputFile, Path videoDirectory, String videoId) {
         Path poster = videoDirectory.resolve(MediaStorage.POSTER);
         for (Duration seek : List.of(POSTER_SEEK, Duration.ZERO)) {
             try {
                 processRunner.run(
-                        commandBuilder.buildPoster(inputFile, poster, seek.isZero() ? null : seek), timeout);
+                        commandBuilder.buildPoster(inputFile, poster, seek.isZero() ? null : seek), POSTER_TIMEOUT);
                 return;
             } catch (RuntimeException e) {
                 log.debug("Poster attempt at {} failed for videoId {}", seek, videoId, e);
@@ -145,7 +173,7 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
     }
 
     /**
-     * Reads back what the encoder actually produced, per rung, to build the CODECS attributes.
+     * Reads back what the encoder actually produced, per rung: its codecs and its real bitrate.
      *
      * <p>Probing the variant playlist rather than a segment is deliberate: a bare {@code .m4s}
      * carries no codec configuration and the {@code _init.mp4} alone reports level {@code -99},
@@ -156,38 +184,43 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
      * ingestion: an approximate CODECS on a playable ladder beats no ladder at all.
      *
      * <p>Measuring matters more for a copied rung than for an encoded one, not less: nothing here
-     * chose its profile or level, so the source's own High@4.1 — which plenty of devices refuse —
-     * would otherwise be advertised as whatever the ladder assumed.
+     * chose its profile, level or bitrate, so the source's own High@4.1 — which plenty of devices
+     * refuse — would otherwise be advertised as whatever the ladder assumed.
      */
-    private List<EncodedRendition> measure(
-            Path videoDirectory, List<PlannedRendition> planned, boolean sourceHadAudio) {
+    private List<EncodedRendition> measure(Path videoDirectory, List<PlannedRendition> planned) {
         List<EncodedRendition> encoded = new ArrayList<>(planned.size());
         for (PlannedRendition rung : planned) {
             HlsRendition rendition = rung.rendition();
             Path variantPlaylist = videoDirectory.resolve(rendition.playlistFileName());
+            String codecs = ProbedVideo.FALLBACK_CODECS;
             try {
-                ProbedVideo output = mediaProbe.probe(variantPlaylist);
-                encoded.add(new EncodedRendition(rendition, output.codecs()));
+                codecs = mediaProbe.probe(variantPlaylist).codecs();
             } catch (RuntimeException e) {
-                String fallback = sourceHadAudio ? ProbedVideo.FALLBACK_CODECS : "avc1.4d001f";
                 log.warn(
-                        "Could not probe {} for videoId directory {}; advertising {}",
+                        "Could not probe {} in {}; advertising {}",
                         rendition.playlistFileName(),
                         videoDirectory.getFileName(),
-                        fallback,
+                        codecs,
                         e);
-                encoded.add(new EncodedRendition(rendition, fallback));
             }
+            String finalCodecs = codecs;
+            encoded.add(variantWeigher
+                    .weigh(variantPlaylist)
+                    .map(weight -> new EncodedRendition(
+                            rendition, finalCodecs, weight.averageBps(), weight.peakBps()))
+                    .orElseGet(() -> EncodedRendition.estimated(rendition, finalCodecs)));
         }
         return encoded;
     }
 
-    /** The planned ladder as one log line, e.g. {@code 1080p(copy) 720p 480p}. */
-    private static String describe(List<PlannedRendition> planned) {
-        return planned.stream()
-                .map(rung -> rung.copyVideo()
-                        ? rung.rendition().name() + (rung.copyAudio() ? "(copy)" : "(copy, audio re-encoded)")
-                        : rung.rendition().name())
-                .collect(java.util.stream.Collectors.joining(" "));
+    /** The shared audio rendition, weighed the same way, because a copied track declares nothing. */
+    private EncodedAudio measureAudio(Path videoDirectory, AudioPlan audio) {
+        if (!audio.present()) {
+            return EncodedAudio.none();
+        }
+        return variantWeigher
+                .weigh(videoDirectory.resolve(audio.playlistFileName()))
+                .map(weight -> new EncodedAudio(audio, weight.averageBps(), weight.peakBps()))
+                .orElseGet(() -> new EncodedAudio(audio, audio.bitrateKbps() * 1000, audio.bitrateKbps() * 1000));
     }
 }

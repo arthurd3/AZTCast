@@ -41,6 +41,22 @@ public interface MediaStorage {
     Optional<Path> resolveHlsAsset(String videoId, String fileName);
 
     /**
+     * Deletes a half-written HLS directory, and refuses to delete a finished one.
+     *
+     * <p>A failed encode used to leave its wreckage on disk until the reaper came for it a week
+     * later: partial {@code .m4s} files, variant playlists for rungs that never finished, and no
+     * {@code master.m3u8}. Invisible to the library, which lists only directories that have one, and
+     * charged to the disk regardless.
+     *
+     * <p>The master playlist is also the guard. Its presence means the ladder finished, so anything
+     * calling this on a ready video — a retry racing a completed encode, a mistaken id — is refused
+     * rather than obeyed. Deletion here can only ever remove something nothing can play.
+     *
+     * @return whether anything was removed
+     */
+    boolean discardIncompleteHls(String videoId);
+
+    /**
      * Directories of videos whose ladder is complete, i.e. whose master playlist exists.
      *
      * <p>The master playlist is written last, so its presence is the signal that the whole ladder is

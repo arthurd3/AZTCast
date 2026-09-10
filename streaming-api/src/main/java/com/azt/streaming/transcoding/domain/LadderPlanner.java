@@ -41,7 +41,7 @@ public final class LadderPlanner {
      * @param configured the full ladder from configuration, in any order
      * @param source what ffprobe found in the file about to be transcoded
      */
-    public static List<PlannedRendition> plan(List<HlsRendition> configured, ProbedVideo source) {
+    public static List<PlannedRendition> plan(List<HlsRendition> configured, ProbedSource source) {
         List<HlsRendition> byHeightDescending = configured.stream()
                 .sorted(Comparator.comparingInt(HlsRendition::height).reversed())
                 .toList();
@@ -75,14 +75,18 @@ public final class LadderPlanner {
     /**
      * The source itself, as a rung.
      *
-     * <p>The bitrate carried here is the container's, which already includes the audio track, so the
-     * rung declares no separate audio bitrate — {@code peakBandwidthBps()} would otherwise count it
-     * twice. What the playlist advertises is then what the file actually costs to stream, which is
-     * the only honest figure available for a stream nothing rate-controlled.
+     * <p>The bitrate carried here is the container's, which also includes an audio track that no
+     * longer travels inside this rung — so it overstates the video by however much the audio was.
+     * That is tolerable only because it is a fallback: the real figure is weighed off the segments
+     * once they exist, and this is what the playlist would say if that weighing ever fails.
+     *
+     * <p>The rung carries no audio decision of its own any more. There is one audio rendition for
+     * the whole ladder, planned by {@link AudioPlanner} against what this ffmpeg build can decode
+     * rather than against what this rung happens to be doing with the video.
      */
-    private static PlannedRendition copyRung(ProbedVideo source) {
-        HlsRendition rung = new HlsRendition(
-                source.height() + "p", source.width(), source.height(), Math.max(source.bitRateKbps(), 1), 0);
-        return new PlannedRendition(rung, true, source.audioIsCopyable());
+    private static PlannedRendition copyRung(ProbedSource source) {
+        HlsRendition rung =
+                new HlsRendition(source.height() + "p", source.width(), source.height(), Math.max(source.bitRateKbps(), 1));
+        return new PlannedRendition(rung, true);
     }
 }

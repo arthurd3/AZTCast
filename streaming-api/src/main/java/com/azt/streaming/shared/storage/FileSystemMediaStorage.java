@@ -70,6 +70,32 @@ public class FileSystemMediaStorage implements MediaStorage {
     }
 
     @Override
+    public boolean discardIncompleteHls(String videoId) {
+        Path directory;
+        try {
+            directory = requireInside(hlsRoot, videoId, "");
+        } catch (IllegalArgumentException e) { // InvalidPathException is a subclass
+            log.warn("Refusing to discard an HLS directory outside the media root: videoId={}", videoId);
+            return false;
+        }
+        if (!Files.isDirectory(directory)) {
+            return false;
+        }
+        // The sentinel is the guard. A directory with a master playlist is a video someone can
+        // watch — and one that a viewer may be part-way through — so this can only ever remove
+        // something that never finished.
+        if (Files.isRegularFile(directory.resolve(MASTER_PLAYLIST))) {
+            log.warn("Not discarding {}: it has a master playlist, so the ladder is complete", videoId);
+            return false;
+        }
+        boolean removed = MediaDirectories.deleteRecursively(directory);
+        if (removed) {
+            log.info("Discarded the incomplete HLS output for videoId {}", videoId);
+        }
+        return removed;
+    }
+
+    @Override
     public List<Path> listReadyVideoDirectories() {
         if (!Files.isDirectory(hlsRoot)) {
             return List.of();

@@ -49,27 +49,93 @@ public record StreamingProperties(
     /**
      * The external ffmpeg process and the HLS ladder it produces.
      *
-     * <p>{@code videoCodec} is configurable because {@code libx264} is not universally present:
-     * distributions that ship a patent-free build (Fedora's default, for one) carry
-     * {@code libopenh264} instead. Both produce H.264 Main@3.1, so the CODECS attribute the master
-     * playlist advertises stays correct either way — but a hardcoded encoder name fails at runtime
-     * on any host that lacks it.
+     * <p>{@code videoCodec} accepts the sentinel {@code auto}, which is the shipped default and the
+     * only setting that survives being moved between hosts. Naming an encoder outright pins the
+     * service to one build: {@code libx264} is absent from every patent-free distribution, and the
+     * previous answer to that was a hand-edited Spring profile saying "actually libopenh264 here" —
+     * which covers exactly the machines someone remembered to write a profile for. Under
+     * {@code auto} the first encoder from {@code videoCodecPreference} that the binary actually
+     * carries is used, and a name is still accepted for anyone who wants to pin one.
+     *
+     * @param preset rate/quality preset handed to the encoder, or {@code auto} for a sensible
+     *     default per encoder family. Emitted only when the resolved encoder accepts one —
+     *     {@code libopenh264} has no presets, and passing it one fails the command.
      */
     public record Ffmpeg(
             @NotBlank String binary,
             @NotBlank String probeBinary,
             @NotBlank String videoCodec,
+            @NotEmpty List<String> videoCodecPreference,
+            @NotBlank String preset,
             @NotNull Duration timeout,
             @NotNull Duration segmentDuration,
-            @NotEmpty List<@Valid Rendition> renditions) {}
+            @NestedConfigurationProperty @Valid @NotNull Audio audio,
+            @NestedConfigurationProperty @Valid @NotNull Subtitles subtitles,
+            @NestedConfigurationProperty @Valid @NotNull Hardware hardware,
+            @NotEmpty List<@Valid Rendition> renditions) {
 
-    /** One rung of the encoding ladder. Replaces three index-aligned {@code String[]}. */
+        /** The sentinel that means "ask the binary what it has". */
+        public static final String AUTO = "auto";
+
+        public boolean autoVideoCodec() {
+            return AUTO.equalsIgnoreCase(videoCodec);
+        }
+
+        public boolean autoPreset() {
+            return AUTO.equalsIgnoreCase(preset);
+        }
+    }
+
+    /**
+     * The single audio rendition every rung shares.
+     *
+     * <p>Singular, since the ladder stopped encoding the same track once per rung. That cost five
+     * AAC encodes and five copies of the same audio in the segments, and Apple's authoring
+     * specification asks for the opposite.
+     *
+     * @param encoderPreference AAC encoders in descending order of preference; the first one this
+     *     build carries is used
+     * @param onUndecodable what to do when the source's audio cannot be turned into AAC here —
+     *     {@code passthrough}, {@code drop} or {@code fail}. The situation is ordinary rather than
+     *     exotic: E-AC-3 is the audio of essentially every AMZN WEB-DL and a patent-free ffmpeg has
+     *     no decoder for it, so this is the knob that decides whether such a file becomes a video
+     *     with Safari-only sound, a silent video, or a failed ingestion.
+     */
+    public record Audio(
+            @NotEmpty List<String> encoderPreference,
+            @Positive int bitrateKbps,
+            @Positive int channels,
+            @Positive int sampleRate,
+            @NotNull UndecodableAudioPolicy onUndecodable) {}
+
+    /**
+     * Text subtitle tracks in the source, republished as WebVTT.
+     *
+     * <p>Off is a legitimate setting: extraction spends one short pass per track, and an operator
+     * serving a catalogue that never carries subtitles has no reason to pay it.
+     */
+    public record Subtitles(boolean enabled) {}
+
+    /**
+     * Hardware encoding.
+     *
+     * <p>Detection only for now — the resolved capability is reported on {@code /actuator/health}
+     * and by the preflight script, and the encode path stays in software. {@code device} is the DRM
+     * render node a VAAPI probe initialises.
+     */
+    public record Hardware(boolean enabled, String device) {}
+
+    /**
+     * One rung of the encoding ladder. Replaces three index-aligned {@code String[]}.
+     *
+     * <p>It carried an audio bitrate until the ladder moved to a shared audio rendition. A rung is a
+     * video rendition now, and the one audio bitrate lives under {@code ffmpeg.audio}.
+     */
     public record Rendition(
             @NotBlank String name,
             @Positive int width,
             @Positive int height,
-            @Positive int videoBitrateKbps,
-            @Positive int audioBitrateKbps) {}
+            @Positive int videoBitrateKbps) {}
 
     /**
      * BitTorrent acquisition limits.
@@ -165,6 +231,19 @@ public record StreamingProperties(
      * names onto the library's enum, and a fitness function keeps {@code bt..} on its side of that
      * line.
      */
+    /**
+     * Mirrors {@link com.azt.streaming.transcoding.domain.UndecodableAudioPolicy}.
+     *
+     * <p>Declared here rather than imported for the same reason {@link Encryption} is: nothing in
+     * {@code shared.config} may depend on a slice, and {@code ArchitectureTest} enforces it. The
+     * transcoding adapter maps this by name.
+     */
+    public enum UndecodableAudioPolicy {
+        PASSTHROUGH,
+        DROP,
+        FAIL
+    }
+
     public enum Encryption {
         REQUIRE_PLAINTEXT,
         PREFER_PLAINTEXT,

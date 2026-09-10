@@ -41,40 +41,90 @@ aztcast:
     ffmpeg:
       binary: ffmpeg
       probe-binary: ffprobe
-      # Any H.264 encoder. Distros shipping a patent-free ffmpeg have libopenh264
-      # instead of libx264; both yield Main@3.1, matching the advertised CODECS.
-      video-codec: libx264
+
+      # `auto` asks the binary what it carries and takes the first preference it has.
+      # Naming an encoder here pins the service to one build: libx264 is absent from
+      # every patent-free distribution, and the previous answer to that was a profile
+      # saying "actually libopenh264 here", which covers only the machines someone
+      # remembered to write a profile for. Both yield H.264 Main, and the CODECS the
+      # master advertises is measured off the output either way.
+      video-codec: auto
+      video-codec-preference: [libx264, libopenh264, h264_v4l2m2m]
+
+      # `auto` means veryfast on encoders whose presets are x264's, and nothing at all
+      # on encoders that have no -preset. Emitted only when the resolved encoder
+      # actually defines the option.
+      preset: auto
+
       timeout: 30m
       segment-duration: 4s
+
+      # One audio rendition, shared by every rung via an EXT-X-MEDIA group. The ladder
+      # used to encode this same track once per rung: five AAC encodes and five copies
+      # of the same audio in the segments, ~90 MB of duplication on a 22-minute episode.
+      audio:
+        # libfdk_aac beats the native encoder at these bitrates and plenty of builds
+        # carry it. Plenty do not, which is why this is a list.
+        encoder-preference: [libfdk_aac, aac]
+        bitrate-kbps: 128
+        channels: 2
+        sample-rate: 48000
+        # What to do when this build cannot turn the source audio into AAC. E-AC-3 is
+        # the audio of essentially every AMZN WEB-DL and a patent-free ffmpeg has no
+        # decoder for it, so this is an ordinary case, not an exotic one.
+        #
+        #   passthrough  copy the track in untouched when fMP4 can carry it (it can
+        #                carry ac3/eac3/aac/flac/alac/opus). Plays on Safari, iOS and
+        #                tvOS, silent on Chrome — and the CODECS says ec-3, so a player
+        #                knows before it fetches a segment rather than after.
+        #   drop         produce a video-only ladder. Honest, universal, silent.
+        #   fail         refuse the ingestion, in milliseconds, with a message naming
+        #                the missing decoder.
+        on-undecodable: passthrough
+
+      # Text subtitle tracks in the source, republished as WebVTT sidecars and
+      # advertised as an EXT-X-MEDIA subtitle group. Bitmap tracks (PGS, VobSub) need
+      # OCR rather than a muxer and are skipped.
+      subtitles:
+        enabled: true
+
+      # Detection only for now: what the host could offer is reported on
+      # /actuator/health and by scripts/check-prereqs.sh, and the encode stays in
+      # software. An encoder appearing in `ffmpeg -encoders` is not the same as one
+      # that opens — h264_vaapi is listed on hosts whose Mesa driver exposes no H.264
+      # profile at all — so the probe is a real one-frame encode.
+      hardware:
+        enabled: true
+        device: /dev/dri/renderD128
+
       # Rungs are spaced ~1.6-1.8x apart so there is a usable step for roughly every
       # doubling of bandwidth; too-close rungs cost encoding time and buy no adaptation.
       # Order matters only for readability — the player picks by BANDWIDTH.
+      #
+      # Video only: audio is one shared rendition, configured above. What each rung
+      # actually costs is weighed off its segments once written, so BANDWIDTH is
+      # measured rather than derived from these numbers.
       renditions:
         - name: 1080p
           width: 1920
           height: 1080
           video-bitrate-kbps: 5000
-          audio-bitrate-kbps: 128
         - name: 720p
           width: 1280
           height: 720
           video-bitrate-kbps: 3000
-          audio-bitrate-kbps: 128
         - name: 480p
           width: 854
           height: 480
           video-bitrate-kbps: 1500
-          audio-bitrate-kbps: 96
         - name: 360p
           width: 640
           height: 360
           video-bitrate-kbps: 900
-          audio-bitrate-kbps: 96
         - name: 240p
           width: 426
           height: 240
           video-bitrate-kbps: 500
-          audio-bitrate-kbps: 64
 
     torrent:
       video-extensions: [mp4, mkv, avi, mov, m4v, webm]

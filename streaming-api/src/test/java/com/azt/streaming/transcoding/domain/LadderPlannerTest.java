@@ -10,14 +10,17 @@ class LadderPlannerTest {
 
     /** The shipped ladder, so these assertions are about the configuration people actually run. */
     private static final List<HlsRendition> LADDER = List.of(
-            new HlsRendition("1080p", 1920, 1080, 5000, 128),
-            new HlsRendition("720p", 1280, 720, 3000, 128),
-            new HlsRendition("480p", 854, 480, 1500, 96),
-            new HlsRendition("360p", 640, 360, 900, 96),
-            new HlsRendition("240p", 426, 240, 500, 64));
+            new HlsRendition("1080p", 1920, 1080, 5000),
+            new HlsRendition("720p", 1280, 720, 3000),
+            new HlsRendition("480p", 854, 480, 1500),
+            new HlsRendition("360p", 640, 360, 900),
+            new HlsRendition("240p", 426, 240, 500));
 
-    private static ProbedVideo source(String videoCodec, int width, int height, String audioCodec, String audioProfile) {
-        return new ProbedVideo(true, audioCodec != null, "High", 40, videoCodec, audioCodec, audioProfile, width, height, 6000);
+    static ProbedSource source(String videoCodec, int width, int height, String audioCodec, String audioProfile) {
+        List<ProbedAudio> audio = audioCodec == null
+                ? List.of()
+                : List.of(new ProbedAudio(0, audioCodec, audioProfile, 2, 48000, "eng", null, true));
+        return new ProbedSource(true, videoCodec, "High", 40, width, height, 23.976, 6000, 1357.8, audio, List.of());
     }
 
     private static List<String> names(List<PlannedRendition> planned) {
@@ -31,7 +34,6 @@ class LadderPlannerTest {
 
         assertThat(names(planned)).containsExactly("1080p", "720p", "480p", "360p", "240p");
         assertThat(planned.getFirst().copyVideo()).isTrue();
-        assertThat(planned.getFirst().copyAudio()).isTrue();
         // Exactly one copy. A second would mean two rungs of identical content.
         assertThat(planned.stream().filter(PlannedRendition::copyVideo)).hasSize(1);
     }
@@ -56,17 +58,6 @@ class LadderPlannerTest {
         // 1080p is kept, but encoded: an HEVC top rung would be a rung many browsers refuse.
         assertThat(names(planned)).containsExactly("1080p", "720p", "480p", "360p", "240p");
         assertThat(planned).allMatch(rung -> !rung.copyVideo());
-    }
-
-    @Test
-    @DisplayName("re-encodes audio that is not AAC-LC while still copying the video")
-    void reEncodesUnusualAudio() {
-        List<PlannedRendition> planned = LadderPlanner.plan(LADDER, source("h264", 1920, 1080, "aac", "HE-AAC"));
-
-        // The CODECS string hardcodes mp4a.40.2, so copying HE-AAC would have the playlist claim
-        // AAC-LC for something that is not. Re-encoding the audio costs almost nothing.
-        assertThat(planned.getFirst().copyVideo()).isTrue();
-        assertThat(planned.getFirst().copyAudio()).isFalse();
     }
 
     @Test
@@ -103,7 +94,8 @@ class LadderPlannerTest {
     void unmeasuredSourceBuildsWhatWasConfigured() {
         // Probing an output rather than a source reports no dimensions. Guessing from that would be
         // worse than the behaviour this replaced.
-        ProbedVideo unmeasured = ProbedVideo.measured(true, "Main", 31);
+        ProbedSource unmeasured =
+                new ProbedSource(true, "h264", "Main", 31, 0, 0, 0, 0, 0, List.of(), List.of());
 
         assertThat(names(LadderPlanner.plan(LADDER, unmeasured)))
                 .containsExactly("1080p", "720p", "480p", "360p", "240p");
@@ -115,10 +107,10 @@ class LadderPlannerTest {
         List<PlannedRendition> planned = LadderPlanner.plan(LADDER, source("h264", 1920, 1080, "aac", "LC"));
         HlsRendition copied = planned.getFirst().rendition();
 
-        // The container bitrate already includes audio, so the rung declares none of its own —
-        // otherwise peakBandwidthBps() would count the audio track twice.
+        // A first estimate only: the container bitrate also covers an audio track that now travels
+        // in its own rendition, so what the playlist actually advertises is weighed off the
+        // segments once they exist. This is what it falls back to when that weighing fails.
         assertThat(copied.videoBitrateKbps()).isEqualTo(6000);
-        assertThat(copied.audioBitrateKbps()).isZero();
         assertThat(copied.resolution()).isEqualTo("1920x1080");
     }
 }
