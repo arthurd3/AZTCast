@@ -16,6 +16,8 @@ make dev       # run both applications
 make dev-down  # stop a run that outlived its terminal
 make test      # API tests + ArchUnit rules
 make lint      # player lint and format check
+make engine    # build the sandboxed torrent engine image
+make bench     # time a transcode ladder on this machine
 ```
 
 `make test` must pass before a pull request. It includes the architecture
@@ -52,11 +54,12 @@ libtorrent-rasterbar, which is packaged on Debian and not everywhere, so it buil
 rather than on your machine.
 
 ```bash
-docker build -t aztcast/torrent-engine:dev torrent-engine
+make engine
 ```
 
-Everything else works without it. `make dev` runs the in-process engine, which is the default
-outside the `docker` profile — see [ADR-0032](docs/decisions/0032-the-swarm-runs-in-a-process-of-its-own.md)
+Everything else works without it, and `make dev` says which engine it started so the difference is
+visible rather than inferred. It runs the in-process engine, which is the default outside the
+`docker` profile — see [ADR-0032](docs/decisions/0032-the-swarm-runs-in-a-process-of-its-own.md)
 for why there are two, and what the second one buys.
 
 If you change the wire protocol, change both ends in one commit. The contract lives in

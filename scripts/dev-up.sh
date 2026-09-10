@@ -72,6 +72,13 @@ for _ in $(seq 1 90); do
   if curl -fsS http://localhost:8080/actuator/health >/dev/null 2>&1; then
     api_up=1
     echo "API is up."
+    # Which BitTorrent client actually came up, because it is not the one the containers
+    # run and nothing else says so. `make dev` uses the in-JVM bt library: it needs nothing
+    # installed, which is the whole reason it is the default (ADR-0032). The sandboxed C++
+    # engine -- own user, no capabilities, one writable directory -- is a container thing,
+    # so it only appears under `make up`. Worth one line here rather than leaving someone to
+    # infer it from a Maven log.
+    echo "Acquisition: embedded (bt, in this JVM). \`make up\` runs the sandboxed engine instead."
     break
   fi
   # A dead Maven means the API is never coming up, and sitting out the remaining eighty
