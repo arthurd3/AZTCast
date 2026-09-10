@@ -29,6 +29,46 @@
     }
   }
 
+  /*
+   * The fade lengths, registered so they can be animated at all — a plain custom property
+   * interpolates as a string and would jump from 0 to 3rem rather than sweep.
+   */
+  @property --rail-fade-start {
+    syntax: '<length>';
+    inherits: false;
+    initial-value: 0px;
+  }
+
+  @property --rail-fade-end {
+    syntax: '<length>';
+    inherits: false;
+    initial-value: 3rem;
+  }
+
+  /*
+   * Each edge fades in only once there is something hidden past it: the start fade appears as
+   * soon as the rail leaves 0, the end fade retires as it reaches the far end.
+   */
+  @keyframes rail-fade {
+    0% {
+      --rail-fade-start: 0px;
+    }
+
+    8%,
+    100% {
+      --rail-fade-start: 3rem;
+    }
+
+    0%,
+    92% {
+      --rail-fade-end: 3rem;
+    }
+
+    100% {
+      --rail-fade-end: 0px;
+    }
+  }
+
   /* The watch page's "keep exploring" strip: one row, scrolled sideways, snapping. */
   .library--rail {
     grid-auto-flow: column;
@@ -36,8 +76,27 @@
     grid-template-columns: none;
     overflow-x: auto;
     scroll-snap-type: x mandatory;
+    /* Mandatory snapping with no scroll-padding parks the snapped card flush to the edge. */
+    scroll-padding-inline-start: var(--space-1);
+    /* Reaching either end should not start scrolling the page sideways. */
+    overscroll-behavior-inline: contain;
     padding-bottom: var(--space-3);
     scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+    /*
+     * The affordance that says there are more cards off the edge. Driven by the rail's own
+     * scroll position, so it costs no JS and no scroll listener. Browsers without
+     * scroll-driven animations hold the initial values and simply show no fade — the strip
+     * then looks exactly as it did before this rule existed.
+     */
+    mask: linear-gradient(
+      to right,
+      transparent,
+      #000 var(--rail-fade-start) calc(100% - var(--rail-fade-end)),
+      transparent
+    );
+    animation: rail-fade linear;
+    animation-timeline: scroll(self inline);
   }
 
   .library--rail > * {

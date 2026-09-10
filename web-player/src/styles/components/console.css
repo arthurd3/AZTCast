@@ -133,7 +133,17 @@
 
   .log {
     max-height: 420px;
-    overflow: auto;
+    /*
+     * Y is the axis that matters; X cannot actually be excluded — naming one axis forces the
+     * other from `visible` to `auto` — but .log__line breaks anything long, so nothing
+     * overflows sideways and the horizontal bar never appears.
+     */
+    overflow-y: auto;
+    /* A log that has reached its end should not start scrolling the page behind it. */
+    overscroll-behavior: contain;
+    /* The gutter is reserved before the log grows past 420px, so the lines do not shift
+       left the moment the scrollbar arrives. */
+    scrollbar-gutter: stable;
     padding: var(--space-3);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);

@@ -10,8 +10,18 @@
     inset-inline-end: 0;
     z-index: var(--z-popover);
     min-width: 13rem;
-    max-height: 60vh;
+    /*
+     * Bounded by the player as well as by the viewport. 60vh alone is measured against the
+     * window, but this panel lives inside .player, which is `overflow: hidden` — on a short
+     * viewport the panel was clipped at the top as well as scrolled.
+     */
+    max-height: min(60vh, 22rem);
     overflow-y: auto;
+    /* Without this, reaching the end of the list hands the wheel to the watch page behind
+       the video. */
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
     padding: var(--space-2);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-md);
@@ -26,7 +36,13 @@
     border-top: 1px solid var(--border);
   }
 
+  /* Sticky, because the list runs to ~48 items once a release carries forty subtitle tracks,
+     and which group you are in stops being obvious a screen into it. */
   .menu__title {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-base);
+    background: var(--surface);
     padding: var(--space-1) var(--space-3);
     font-family: var(--font-display);
     font-size: var(--text-xs);

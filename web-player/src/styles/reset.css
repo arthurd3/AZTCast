@@ -8,7 +8,14 @@
     box-sizing: border-box;
   }
 
+  /*
+   * Declares the app dark to the browser, which is what makes every widget the UA draws for
+   * us — scrollbars first, but also <select> menus, spinners and form controls — come out in
+   * dark trim. Without it Chrome paints the light classic scrollbar, arrows and all, over a
+   * page whose lightest surface is 22% L.
+   */
   html {
+    color-scheme: dark;
     -webkit-text-size-adjust: 100%;
   }
 
