@@ -1,0 +1,75 @@
+/*
+ * The swarm table: who is serving the torrent being downloaded.
+ *
+ * Deliberately quiet. It sits under the progress track during a download and is the only part
+ * of the page that is purely informational — nothing here is clickable and nothing acts on it,
+ * so it reads at the weight of a caption rather than competing with the track above it.
+ */
+@layer components {
+  .peers {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-5);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+  }
+
+  .peers__title {
+    margin: 0;
+    font-size: var(--text-sm);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .peers__summary {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Six columns of addresses do not fit a phone, and the page must not scroll sideways
+     because of them. The table scrolls inside this instead. */
+  .peers__scroll {
+    overflow-x: auto;
+    margin-top: var(--space-2);
+  }
+
+  .peers__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-xs);
+    white-space: nowrap;
+  }
+
+  .peers__table th {
+    padding: var(--space-2) var(--space-3) var(--space-2) 0;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  .peers__table td {
+    padding: var(--space-2) var(--space-3) var(--space-2) 0;
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 50%, transparent);
+    color: var(--text-dim);
+  }
+
+  .peers__address {
+    font-family: var(--font-mono);
+  }
+
+  /* A peer that actually sent bytes, as opposed to an address a tracker named. */
+  .peers__row--connected td {
+    color: var(--text);
+  }
+
+  .peers__row--connected .peers__address {
+    color: var(--accent);
+  }
+}

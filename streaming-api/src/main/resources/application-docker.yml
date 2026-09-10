@@ -29,5 +29,30 @@ aztcast:
       internal-prefix: /_media
     redis:
       enabled: true
+
+    torrent:
+      network:
+        # Stricter in a container than on a laptop, because the container is the thing
+        # that gets pointed at a tunnel. None of it is anonymity — see the header of
+        # docker-compose.vpn.yml, which is where the address actually gets hidden.
+        #
+        # REQUIRE_ENCRYPTED, not PREFER_: a plaintext fallback is a peer-by-peer decision
+        # made by the other end, so "prefer" means an observer only has to be talking to
+        # us to opt out of it. It costs peers that will not do MSE.
+        encryption: REQUIRE_ENCRYPTED
+        # Multicast announces to a Docker bridge find nothing and tell the host network
+        # what is being downloaded. No reason to send them.
+        disable-local-service-discovery: true
+        # Also off here, unlike the default. PEX trades peer lists with everyone connected,
+        # which broadcasts the swarm's membership — including this node's participation in
+        # it — further than the trackers already do. It costs peers; behind a tunnel that
+        # is the trade worth making.
+        disable-peer-exchange: true
+
+    # Recording peer addresses is off by default here too. Turn it on deliberately, and
+    # read the retention note in the README before you do.
+    providers:
+      database-path: /var/lib/aztcast/providers.db
+
     web:
       allowed-origins: []

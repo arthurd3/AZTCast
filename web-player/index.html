@@ -3,49 +3,75 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0d16" />
+    <meta
+      name="description"
+      content="AZTCast — biblioteca de vídeos transcodificados e player HLS adaptativo."
+    />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <title>AZTCast — Player</title>
+    <title>AZTCast — Biblioteca</title>
   </head>
   <body>
-    <div class="container">
-      <h1>🎬 AZTCast — Player Adaptativo</h1>
+    <a class="skip-link" href="#main">Pular para o conteúdo</a>
 
-      <div class="controls">
-        <label for="magnetUrl">Enviar um torrent:</label><br /><br />
-        <input
-          type="text"
-          id="magnetUrl"
-          placeholder="magnet:?xt=urn:btih:…"
-          autocomplete="off"
-          spellcheck="false"
-        />
-        <button id="ingestBtn" type="button">Enviar</button>
-        <div id="jobProgress" class="job-progress hidden"></div>
-      </div>
+    <div class="shell">
+      <header class="site-header">
+        <a class="brand" href="/index.html">
+          <img class="brand__mark" src="/brand.svg" width="32" height="32" alt="" />
+          <span>AZTCast<span class="brand__sub"> · biblioteca</span></span>
+        </a>
+      </header>
 
-      <div class="controls">
-        <label for="videoId">Ou tocar um vídeo já processado:</label><br /><br />
-        <input
-          type="text"
-          id="videoId"
-          placeholder="Cole o ID do vídeo (UUID)"
-          autocomplete="off"
-          spellcheck="false"
-        />
-        <button id="loadBtn" type="button">Carregar Vídeo</button>
-      </div>
+      <main id="main">
+        <section class="launch" aria-labelledby="launchTitle">
+          <p class="eyebrow">Ingestão</p>
+          <h1 id="launchTitle" class="launch__title">Coloque um torrent em órbita</h1>
+          <p class="launch__lede">
+            Cole um link magnet. O AZTCast baixa, transcodifica numa escada adaptativa e devolve um
+            vídeo pronto para assistir em qualquer largura de banda.
+          </p>
 
-      <div id="status" class="status hidden"></div>
+          <div class="field launch__field">
+            <label class="visually-hidden" for="magnetUrl">Link magnet</label>
+            <div class="input-group">
+              <input
+                type="text"
+                id="magnetUrl"
+                class="input input--mono"
+                placeholder="magnet:?xt=urn:btih:…"
+                autocomplete="off"
+                spellcheck="false"
+                aria-describedby="magnetHint"
+              />
+              <button id="ingestBtn" type="button" class="btn btn--primary">Enviar</button>
+            </div>
+            <p id="magnetHint" class="field__hint">
+              Aceita links magnet BitTorrent. Ingestões repetidas do mesmo torrent reaproveitam o
+              vídeo já processado.
+            </p>
+          </div>
 
-      <video id="video" controls crossorigin="anonymous" class="hidden"></video>
+          <div id="status" class="banner hidden" role="status" aria-live="polite"></div>
+          <div id="jobProgress" class="job-progress hidden"></div>
+          <div id="providerPeers" class="peers hidden"></div>
+        </section>
 
-      <div class="video-info">
-        <label for="qualitySelect">Qualidade:</label>
-        <select id="qualitySelect" class="hidden"></select>
-        <div id="videoInfo"></div>
-      </div>
+        <section class="library-section" aria-labelledby="libraryTitle">
+          <div class="section-head">
+            <h2 id="libraryTitle">Sua constelação</h2>
+            <p class="muted">Tudo que já foi transcodificado, mais recente primeiro.</p>
+          </div>
 
-      <p class="video-info"><a href="/diagnostics.html">Diagnóstico HLS</a></p>
+          <div id="libraryToolbar" class="library-toolbar hidden"></div>
+          <div id="library" class="library"></div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <span>AZTCast · streaming HLS adaptativo</span>
+        <a href="/providers.html">Fornecedores</a>
+        <a href="/diagnostics.html">Diagnóstico HLS</a>
+      </footer>
     </div>
 
     <script type="module" src="/src/main.js"></script>

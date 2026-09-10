@@ -6,7 +6,10 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -65,6 +68,78 @@ public class FileSystemMediaStorage implements MediaStorage {
             return Optional.empty();
         }
         return Files.isRegularFile(asset) ? Optional.of(asset) : Optional.empty();
+    }
+
+    @Override
+    public Optional<Path> existingDownload(String videoId) {
+        Path directory;
+        try {
+            directory = requireInside(downloadsRoot, videoId, "");
+        } catch (IllegalArgumentException e) { // InvalidPathException is a subclass
+            log.warn("Refusing to look for a download outside the media root: videoId={}", videoId);
+            return Optional.empty();
+        }
+        if (!Files.isDirectory(directory)) {
+            return Optional.empty();
+        }
+        try (Stream<Path> tree = Files.walk(directory)) {
+            return tree.filter(Files::isRegularFile).max(Comparator.comparingLong(FileSystemMediaStorage::sizeOf));
+        } catch (IOException e) {
+            log.warn("Could not look for a retained download under {}", directory, e);
+            return Optional.empty();
+        }
+    }
+
+    private static long sizeOf(Path file) {
+        try {
+            return Files.size(file);
+        } catch (IOException e) {
+            return 0;
+        }
+    }
+
+    @Override
+    public boolean discardIncompleteHls(String videoId) {
+        Path directory;
+        try {
+            directory = requireInside(hlsRoot, videoId, "");
+        } catch (IllegalArgumentException e) { // InvalidPathException is a subclass
+            log.warn("Refusing to discard an HLS directory outside the media root: videoId={}", videoId);
+            return false;
+        }
+        if (!Files.isDirectory(directory)) {
+            return false;
+        }
+        // The sentinel is the guard. A directory with a master playlist is a video someone can
+        // watch — and one that a viewer may be part-way through — so this can only ever remove
+        // something that never finished.
+        if (Files.isRegularFile(directory.resolve(MASTER_PLAYLIST))) {
+            log.warn("Not discarding {}: it has a master playlist, so the ladder is complete", videoId);
+            return false;
+        }
+        boolean removed = MediaDirectories.deleteRecursively(directory);
+        if (removed) {
+            log.info("Discarded the incomplete HLS output for videoId {}", videoId);
+        }
+        return removed;
+    }
+
+    @Override
+    public List<Path> listReadyVideoDirectories() {
+        if (!Files.isDirectory(hlsRoot)) {
+            return List.of();
+        }
+        try (Stream<Path> entries = Files.list(hlsRoot)) {
+            return entries.filter(Files::isDirectory)
+                    .filter(directory -> Files.isRegularFile(directory.resolve(MASTER_PLAYLIST)))
+                    .toList();
+        } catch (IOException e) {
+            // An unreadable root is an operational problem, not the caller's. Answering "no videos"
+            // keeps the listing endpoint up while it is investigated, which beats a 500 that tells a
+            // viewer nothing they can act on.
+            log.warn("Could not list {} for the catalogue", hlsRoot, e);
+            return List.of();
+        }
     }
 
     /**

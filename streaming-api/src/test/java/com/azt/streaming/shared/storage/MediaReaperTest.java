@@ -95,4 +95,45 @@ class MediaReaperTest {
 
         reaper.reap();
     }
+
+    /**
+     * Marks a directory as kept, without making it look freshly modified.
+     *
+     * <p>Ageing the marker too is load-bearing for these tests. A directory is aged by the newest
+     * file anywhere inside it, so a marker written at "now" would put the directory inside the
+     * retention window — and the test would then pass whether or not the exemption works at all.
+     */
+    private void keep(Path directory, Duration age) throws IOException {
+        Path marker = Files.writeString(directory.resolve(VideoCatalog.KEEP_FILE), "{}");
+        FileTime when = FileTime.from(NOW.minus(age));
+        Files.setLastModifiedTime(marker, when);
+        Files.setLastModifiedTime(directory, when);
+    }
+
+    @Test
+    @DisplayName("never reaps a video someone asked to keep, however old it is")
+    void keptVideosSurviveTheRetentionWindow() throws IOException {
+        Path kept = video(hls, "kept", RETENTION.multipliedBy(52));
+        keep(kept, RETENTION.multipliedBy(52));
+        Path notKept = video(hls, "not-kept", RETENTION.plusDays(1));
+
+        reaper().reap();
+
+        assertThat(kept).exists();
+        assertThat(notKept).doesNotExist();
+    }
+
+    @Test
+    @DisplayName("keeping a video does not keep the torrent it came from")
+    void theMarkerDoesNotExemptTheDownload() throws IOException {
+        // Deliberate. The download directory is a second full copy of the video, it is not what
+        // anyone watches, and nothing seeds it once the client stops. Exempting it would double the
+        // disk cost of every kept video for no benefit.
+        Path download = video(downloads, "kept", RETENTION.plusDays(1));
+        keep(download, RETENTION.plusDays(1));
+
+        reaper().reap();
+
+        assertThat(download).doesNotExist();
+    }
 }

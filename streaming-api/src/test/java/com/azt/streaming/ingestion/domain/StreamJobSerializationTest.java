@@ -42,7 +42,33 @@ class StreamJobSerializationTest {
         assertThat(objectMapper.valueToTree(JOB).fieldNames())
                 .toIterable()
                 .containsExactlyInAnyOrder(
-                        "videoId", "status", "magnetUrl", "failureReason", "createdAt", "updatedAt");
+                        "videoId",
+                        "status",
+                        "progressPercent",
+                        "transcodePercent",
+                        "magnetUrl",
+                        "failureReason",
+                        "createdAt",
+                        "updatedAt");
+    }
+
+    @Test
+    @DisplayName("a job written before progressPercent existed still reads back")
+    void toleratesJsonWithoutProgress() throws Exception {
+        // Redis keys live for seven days, so an upgrade is guaranteed to read records written by the
+        // previous version. A missing component has to default rather than throw, or every job in
+        // flight during a deploy becomes unreadable — the same class of failure this file was
+        // written for, arriving from the opposite direction.
+        String legacy =
+                """
+                {"videoId":"v1","status":"DOWNLOADING","magnetUrl":"magnet:?xt=urn:btih:abc",\
+                "failureReason":null,"createdAt":"2026-09-08T12:00:00Z","updatedAt":"2026-09-08T12:00:00Z"}\
+                """;
+
+        StreamJob job = objectMapper.readValue(legacy, StreamJob.class);
+
+        assertThat(job.videoId()).isEqualTo("v1");
+        assertThat(job.progressPercent()).isZero();
     }
 
     @Test

@@ -1,0 +1,134 @@
+/*
+ * Buttons.
+ *
+ * The old stylesheet styled the bare `button` element, which meant every button on every page
+ * was the primary accent — and .video-card then had to fight that rule back off. Nothing here
+ * targets the element; a button looks like a button because it asks to.
+ */
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    min-height: var(--tap-target);
+    padding: var(--space-2) var(--space-5);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-display);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    cursor: pointer;
+    /* Not `all`: transitioning everything would animate the backdrop-filter too. */
+    transition:
+      background-color var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out),
+      color var(--dur-fast) var(--ease-out),
+      transform var(--dur-fast) var(--ease-out),
+      box-shadow var(--dur-base) var(--ease-out);
+  }
+
+  .btn:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+
+  .btn:disabled,
+  .btn[aria-disabled='true'] {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .btn:not(:disabled):active {
+    transform: translateY(1px);
+  }
+
+  /* ---- Primary: the one gradient in the system. Exactly one per view. ---- */
+  .btn--primary {
+    background-image: var(--gradient-action);
+    color: var(--accent-contrast);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .btn--primary:not(:disabled):hover {
+    box-shadow: var(--shadow-md), var(--glow-accent);
+  }
+
+  /* ---- Secondary ---- */
+  .btn--ghost {
+    background: color-mix(in oklab, var(--starlight) 6%, transparent);
+    border-color: var(--border);
+    color: var(--text);
+  }
+
+  .btn--ghost:not(:disabled):hover {
+    background: color-mix(in oklab, var(--starlight) 11%, transparent);
+    border-color: var(--border-strong);
+  }
+
+  /* A toggle that is currently on. Colour alone would not do it — aria-pressed carries the
+     state for anyone not reading colour, and the filled icon carries it visually. */
+  .btn--active {
+    background: color-mix(in oklab, var(--accent) 16%, transparent);
+    border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+    color: var(--accent);
+  }
+
+  /* ---- Icon-only. Square, and never below the tap-target floor. ---- */
+  .btn--icon {
+    min-width: var(--tap-target);
+    padding: var(--space-2);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+  }
+
+  .btn--icon:not(:disabled):hover {
+    background: color-mix(in oklab, var(--starlight) 10%, transparent);
+  }
+
+  .btn--sm {
+    min-height: 32px;
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--text-xs);
+  }
+
+  .btn__icon {
+    width: 1.15em;
+    height: 1.15em;
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /*
+   * Loading. The label stays in the flow at zero opacity rather than being replaced, so the
+   * button keeps its width and the row does not jump while a request is in flight.
+   */
+  .btn[data-loading='true'] {
+    position: relative;
+    color: transparent;
+    pointer-events: none;
+  }
+
+  .btn[data-loading='true']::after {
+    content: '';
+    position: absolute;
+    width: 1.1em;
+    height: 1.1em;
+    border: 2px solid color-mix(in oklab, var(--accent-contrast) 35%, transparent);
+    border-top-color: var(--accent-contrast);
+    border-radius: var(--radius-full);
+    animation: spin 640ms linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(1turn);
+    }
+  }
+}

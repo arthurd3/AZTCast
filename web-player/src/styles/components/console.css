@@ -1,0 +1,176 @@
+/*
+ * The diagnostics page: mission control.
+ *
+ * Same design system as the rest, but in the register of an instrument panel — monospace,
+ * chips that read pass or fail at a glance, and a log that looks like a log. It is an internal
+ * tool, so density beats generosity here in a way it does not anywhere else in the app.
+ */
+@layer components {
+  .console-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-5);
+  }
+
+  /* ---- Status chips ---- */
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    background: color-mix(in oklab, var(--surface) 70%, transparent);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  /* The dot is the redundant, non-colour signal: filled for ok, hollow for not. */
+  .chip::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: var(--radius-full);
+    border: 1px solid currentColor;
+  }
+
+  .chip--ok {
+    color: var(--ok);
+    border-color: color-mix(in oklab, var(--ok) 40%, transparent);
+    background: var(--ok-quiet);
+  }
+
+  .chip--ok::before {
+    background: currentColor;
+  }
+
+  .chip--bad {
+    color: var(--danger);
+    border-color: color-mix(in oklab, var(--danger) 45%, transparent);
+    background: var(--danger-quiet);
+  }
+
+  .chip--warn {
+    color: var(--warn);
+    border-color: color-mix(in oklab, var(--warn) 40%, transparent);
+    background: var(--warn-quiet);
+  }
+
+  /* ---- Inspection report ---- */
+
+  .report {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+    gap: var(--space-4);
+    margin-block: var(--space-5);
+  }
+
+  .report:empty {
+    display: none;
+  }
+
+  .report__card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: color-mix(in oklab, var(--surface) 70%, transparent);
+  }
+
+  .report__title {
+    font-family: var(--font-display);
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  .report__value {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    /* Codec strings and URLs are long and have no spaces to break at. */
+    overflow-wrap: anywhere;
+  }
+
+  .report__rows {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  /* ---- Log ---- */
+
+  .log-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+
+  .log-head__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .log {
+    max-height: 420px;
+    overflow: auto;
+    padding: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: color-mix(in oklab, var(--void) 70%, transparent);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: 1.7;
+  }
+
+  /* Timestamp column fixed, message fluid — so the messages line up down the left. */
+  .log__line {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--space-3);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .log__time {
+    color: var(--text-dim);
+    user-select: none;
+  }
+
+  .log__line--error .log__message {
+    color: var(--danger);
+  }
+
+  .log__line--warn .log__message {
+    color: var(--warn);
+  }
+
+  .log__line--ok .log__message {
+    color: var(--ok);
+  }
+
+  .diagnostics-player {
+    max-width: 640px;
+    margin-block: var(--space-5);
+  }
+}

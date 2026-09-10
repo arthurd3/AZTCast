@@ -3,8 +3,12 @@
 SHELL := /bin/bash
 COMPOSE := docker compose -f deploy/docker-compose.yml
 
+# Reaches scripts/dev-down.sh, which refuses to signal a process from outside this
+# checkout unless this is set: `make dev FORCE_PORTS=1`.
+export FORCE_PORTS
+
 .DEFAULT_GOAL := help
-.PHONY: help check dev api web build test lint format up down logs clean
+.PHONY: help check dev dev-down api web build test lint format up down logs clean
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -15,6 +19,9 @@ check: ## Verify local prerequisites (Java 21, Node, ffmpeg)
 
 dev: ## Run the API and the player together for local development
 	@./scripts/dev-up.sh
+
+dev-down: ## Stop a leftover local dev run (frees :8080 and :5173)
+	@./scripts/dev-down.sh
 
 api: ## Run the API alone (local profile, port 8080)
 	cd streaming-api && ./mvnw spring-boot:run

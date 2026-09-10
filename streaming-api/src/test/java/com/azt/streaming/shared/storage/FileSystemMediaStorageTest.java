@@ -98,6 +98,26 @@ class FileSystemMediaStorageTest {
                 .hasFileName(VIDEO_ID);
     }
 
+    @Test
+    void listsOnlyVideosWhoseLadderIsComplete() throws IOException {
+        writeAsset("master.m3u8");
+        // Mid-transcode: segments are landing but the master playlist is written last, so this one
+        // is not watchable yet and must not be offered.
+        Files.createDirectories(hlsRoot.resolve("half-done"));
+        Files.writeString(hlsRoot.resolve("half-done").resolve("720p_000.m4s"), "x");
+
+        assertThat(storage.listReadyVideoDirectories())
+                .singleElement()
+                .satisfies(directory -> assertThat(directory).hasFileName(VIDEO_ID));
+    }
+
+    @Test
+    void listsNothingWhenTheRootIsMissing() throws IOException {
+        Files.delete(hlsRoot);
+
+        assertThat(storage.listReadyVideoDirectories()).isEmpty();
+    }
+
     private Path writeAsset(String fileName) throws IOException {
         Path directory = Files.createDirectories(hlsRoot.resolve(VIDEO_ID));
         return Files.writeString(directory.resolve(fileName), "#EXTM3U\n");

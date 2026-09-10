@@ -1,20 +1,24 @@
 package com.azt.streaming.transcoding.domain;
 
 /**
- * One rung of the HLS ladder, with the encoder and playlist arithmetic that belongs to it.
+ * One video rung of the HLS ladder, with the encoder and playlist arithmetic that belongs to it.
  *
  * <p>This replaces three index-aligned {@code String[]} — {@code {"720","240"}},
  * {@code {"1280x720","426x240"}} and {@code {"3000k","800k"}} — walked by a shared loop counter, so
  * adding a rung meant editing three arrays in lockstep and any mismatch was silent.
  *
+ * <p>It carried an audio bitrate until the ladder moved to a single shared audio rendition. Holding
+ * one per rung was what made {@code -b:a:0 0k} reachable: the copied top rung sets its audio bitrate
+ * to zero so the bandwidth arithmetic would not count the container's audio twice, and that zero
+ * became an ffmpeg argument on every source whose audio had to be re-encoded. There is one audio
+ * bitrate now, it lives on {@link AudioPlan}, and the master playlist adds it once.
+ *
  * @param name rung label, also the playlist basename (e.g. {@code 720p})
  * @param width scaled output width in pixels
  * @param height scaled output height in pixels
  * @param videoBitrateKbps target video bitrate
- * @param audioBitrateKbps target audio bitrate
  */
-public record HlsRendition(
-        String name, int width, int height, int videoBitrateKbps, int audioBitrateKbps) {
+public record HlsRendition(String name, int width, int height, int videoBitrateKbps) {
 
     /** Headroom above the target bitrate the encoder may use, ~7%. */
     private static final double MAXRATE_FACTOR = 1.07;
@@ -62,21 +66,13 @@ public record HlsRendition(
         return name + "_init.mp4";
     }
 
-    /**
-     * Peak bits per second, for {@code #EXT-X-STREAM-INF:BANDWIDTH}.
-     *
-     * <p>The old value was the video bitrate alone, produced by rewriting {@code "3000k"} to
-     * {@code "3000000"}. That both ignored the 128 kbps audio track and reported the target rather
-     * than the peak, so players underestimated what the stream costs and could pick a rung the
-     * connection cannot sustain.
-     */
-    public int peakBandwidthBps() {
-        return (maxrateKbps() + audioBitrateKbps) * 1000;
+    /** Peak video bits per second, before the shared audio rendition is added to it. */
+    public int peakVideoBps() {
+        return maxrateKbps() * 1000;
     }
 
-    /** Average bits per second, for {@code AVERAGE-BANDWIDTH}. */
-    public int averageBandwidthBps() {
-        return (videoBitrateKbps + audioBitrateKbps) * 1000;
+    /** Average video bits per second, before the shared audio rendition is added to it. */
+    public int averageVideoBps() {
+        return videoBitrateKbps * 1000;
     }
-
 }

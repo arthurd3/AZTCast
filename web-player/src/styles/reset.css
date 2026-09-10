@@ -1,0 +1,87 @@
+/*
+ * A small reset. Only the rules this app actually needs — it is four pages, not a framework.
+ */
+@layer reset {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body,
+  h1,
+  h2,
+  h3,
+  h4,
+  p,
+  figure,
+  ol,
+  ul {
+    margin: 0;
+  }
+
+  ol,
+  ul {
+    padding: 0;
+    list-style: none;
+  }
+
+  /* Headings inherit rather than each carrying browser defaults; the scale lives in base.css. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-size: inherit;
+    font-weight: inherit;
+  }
+
+  img,
+  picture,
+  video,
+  canvas,
+  svg {
+    display: block;
+    max-width: 100%;
+  }
+
+  input,
+  button,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  button {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  a {
+    color: inherit;
+  }
+
+  /* Cross-browser default for anything the components do not override. */
+  :where(:focus-visible) {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  /* Belt to the tokens' braces: kills smooth scrolling and any duration a third party sets. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

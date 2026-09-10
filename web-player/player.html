@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0d16" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>AZTCast — Player</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Pular para o vídeo</a>
+
+    <div class="shell shell--player">
+      <header class="site-header">
+        <a class="brand" href="/index.html">
+          <img class="brand__mark" src="/brand.svg" width="32" height="32" alt="" />
+          <span>AZTCast</span>
+        </a>
+      </header>
+
+      <main id="main">
+        <a class="watch__back" href="/index.html" id="backLink">Voltar à biblioteca</a>
+
+        <h1 id="videoTitle" class="watch__title">Carregando…</h1>
+
+        <div class="player-stage">
+          <div class="player is-paused" id="player">
+            <!--
+              `controls` is deliberately still here. player/controls.js removes it as its first
+              act, so a bundle that fails to load leaves a working native player behind rather
+              than a black rectangle. Do not delete it to "clean up".
+            -->
+            <video id="video" controls playsinline crossorigin="anonymous"></video>
+          </div>
+        </div>
+
+        <div id="resume" class="resume hidden"></div>
+        <div id="status" class="banner watch__status hidden" role="status" aria-live="polite"></div>
+        <div id="videoMeta" class="watch__meta hidden"></div>
+
+        <section
+          class="watch__rail library-section hidden"
+          id="railSection"
+          aria-labelledby="railTitle"
+        >
+          <div class="section-head">
+            <h2 id="railTitle">Continuar explorando</h2>
+          </div>
+          <div id="rail" class="library library--rail"></div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <span>AZTCast · streaming HLS adaptativo</span>
+        <a href="/providers.html">Fornecedores</a>
+        <a href="/diagnostics.html">Diagnóstico HLS</a>
+      </footer>
+    </div>
+
+    <script type="module" src="/src/player.js"></script>
+  </body>
+</html>

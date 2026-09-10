@@ -1,27 +1,193 @@
-/* The hand-rolled dark theme from the original inline <style>, named. */
-:root {
-  --color-bg: #111;
-  --color-surface: #222;
-  --color-surface-raised: #333;
-  --color-border: #555;
-  --color-text: #fff;
-  --color-text-muted: #ccc;
+/*
+ * Orbital — the design tokens.
+ *
+ * Replaces the hand-rolled dark theme this file used to hold: #111 on #222 with Bootstrap's
+ * #007bff, which is what a prototype reaches for when nobody has decided on a palette yet.
+ *
+ * Colours are OKLCH rather than hex because the scales here are *derived* — every hover, tint
+ * and border below is a color-mix() of a base. In sRGB hex those mixes drift in brightness
+ * (a violet and a cyan at the same nominal lightness do not look equally bright); in OKLCH
+ * equal lightness reads as equal lightness, so one rule can tint six accents and stay even.
+ *
+ * Two tiers, and the distinction matters when reading the components: the *palette* names
+ * pigments and is not used directly outside this file, while the *semantic* tokens name jobs
+ * and are all a component should ever reach for. Retheming means editing the top block only.
+ */
+@layer tokens {
+  :root {
+    /* ---- Palette: the cosmos, darkest first ---- */
+    --void: oklch(12% 0.02 265);
+    --deep: oklch(17% 0.03 268);
+    --raised: oklch(22% 0.04 270);
+    --overlay: oklch(27% 0.045 272);
 
-  --color-accent: #007bff;
-  --color-accent-hover: #0056b3;
-  --color-disabled: #666;
+    /* ---- Palette: nebula accents. Reserved for action, focus and emphasis. ---- */
+    --stellar: oklch(78% 0.16 215);
+    --nebula: oklch(65% 0.22 300);
+    --flare: oklch(72% 0.21 350);
 
-  --color-loading: #ffc107;
-  --color-loading-text: #000;
-  --color-success: #28a745;
-  --color-error: #dc3545;
+    /* ---- Palette: light ---- */
+    --starlight: oklch(97% 0.01 265);
+    --dust: oklch(76% 0.02 265);
+    --dust-dim: oklch(60% 0.02 265);
 
-  --radius-sm: 5px;
-  --radius-md: 10px;
-  --space-sm: 10px;
-  --space-md: 20px;
+    /* ---- Semantic: surfaces ---- */
+    --bg: var(--void);
+    --surface: var(--deep);
+    --surface-raised: var(--raised);
+    --surface-overlay: var(--overlay);
 
-  --font-body: Arial, Helvetica, sans-serif;
-  --content-width: 1200px;
-  --video-width: 800px;
+    /* ---- Semantic: text. Every pairing below clears 4.5:1 on --surface. ---- */
+    --text: var(--starlight);
+    --text-muted: var(--dust);
+    --text-dim: var(--dust-dim);
+
+    /* ---- Semantic: action ---- */
+    --accent: var(--stellar);
+    --accent-hover: oklch(from var(--stellar) calc(l + 0.07) c h);
+    --accent-quiet: color-mix(in oklab, var(--stellar) 16%, transparent);
+    /* Text *on* the accent. The accent is light, so this is dark — not --text. */
+    --accent-contrast: oklch(16% 0.03 265);
+    --gradient-action: linear-gradient(135deg, var(--stellar), var(--nebula));
+
+    /* ---- Semantic: lines ---- */
+    --border: color-mix(in oklab, var(--starlight) 12%, transparent);
+    --border-strong: color-mix(in oklab, var(--starlight) 24%, transparent);
+    --focus: var(--stellar);
+    --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus);
+
+    /* ---- Semantic: states.
+       Amber/green/red re-cut inside the palette, so a banner still looks like it belongs to
+       this app. Each is a light foreground meant to sit on its own --*-quiet tint. ---- */
+    --info: var(--stellar);
+    --ok: oklch(80% 0.15 158);
+    --warn: oklch(83% 0.14 85);
+    --danger: oklch(72% 0.18 22);
+    --info-quiet: color-mix(in oklab, var(--info) 14%, transparent);
+    --ok-quiet: color-mix(in oklab, var(--ok) 14%, transparent);
+    --warn-quiet: color-mix(in oklab, var(--warn) 14%, transparent);
+    --danger-quiet: color-mix(in oklab, var(--danger) 14%, transparent);
+
+    /* ---- Semantic: glass.
+       Semi-opaque, not translucent: NN/g's first rule is that text on glass must still meet
+       contrast, and a pure alpha layer cannot promise that over an animated starfield.
+       The blur is deliberately high (the second rule) and is never animated — see --dur-*. ---- */
+    --glass-bg: color-mix(in oklab, var(--deep) 82%, transparent);
+    --glass-border: var(--border);
+    --glass-blur: 24px;
+
+    /* ---- Space. A 4px base; the names are steps, not pixels. ---- */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.5rem;
+    --space-6: 2rem;
+    --space-7: 3rem;
+    --space-8: 4rem;
+    --space-9: 6rem;
+
+    /* ---- Radius ---- */
+    --radius-xs: 4px;
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 18px;
+    --radius-xl: 28px;
+    --radius-full: 999px;
+
+    /* ---- Type ---- */
+    --font-display: 'Space Grotesk Variable', 'Space Grotesk', system-ui, sans-serif;
+    --font-body:
+      system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif,
+      'Apple Color Emoji', 'Segoe UI Emoji';
+    --font-mono: ui-monospace, 'SFMono-Regular', 'JetBrains Mono', Menlo, Consolas, monospace;
+
+    /* Fluid: the second clamp() argument carries the viewport term, so headings shrink on a
+       phone without a media query. Bodies stay fixed — resizing running text hurts more than
+       it helps. */
+    --text-xs: 0.75rem;
+    --text-sm: 0.875rem;
+    --text-base: 1rem;
+    --text-lg: 1.125rem;
+    --text-xl: clamp(1.25rem, 1.1rem + 0.7vw, 1.5rem);
+    --text-2xl: clamp(1.5rem, 1.3rem + 1vw, 2rem);
+    --text-3xl: clamp(2rem, 1.6rem + 2vw, 3rem);
+    --text-4xl: clamp(2.5rem, 1.9rem + 3vw, 4rem);
+
+    --leading-tight: 1.15;
+    --leading-snug: 1.35;
+    --leading-normal: 1.6;
+    --tracking-tight: -0.02em;
+    --tracking-wide: 0.08em;
+
+    /* ---- Motion. Overridden wholesale under prefers-reduced-motion, below. ---- */
+    --dur-fast: 120ms;
+    --dur-base: 220ms;
+    --dur-slow: 420ms;
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+    /* ---- Elevation ---- */
+    --shadow-sm: 0 1px 2px oklch(0% 0 0 / 40%);
+    --shadow-md: 0 8px 24px oklch(0% 0 0 / 45%);
+    --shadow-lg: 0 24px 64px oklch(0% 0 0 / 55%);
+    --glow-accent: 0 0 32px color-mix(in oklab, var(--accent) 45%, transparent);
+
+    /* ---- Stacking. Declared in one place so no component invents a z-index. ---- */
+    --z-cosmos: 0;
+    --z-base: 1;
+    --z-sticky: 10;
+    --z-controls: 20;
+    --z-popover: 30;
+    --z-modal: 40;
+    /* The map's own overlay, on Leaflet's internal scale rather than this one, because what it
+       stacks against are the map's children and not the page. Above every pane, the popups at
+       700 included; below the control corners at 1000, so the +/- buttons stay crisp above the
+       scrim — they are the alternative the overlay is pointing at. */
+    --z-map-overlay: 900;
+
+    /* ---- Layout ---- */
+    --content-width: 1440px;
+    --player-width: 1280px;
+    /* The floor for anything tappable. */
+    --tap-target: 44px;
+  }
+
+  /*
+   * Reduced motion. The starfield stops on its own (cosmos.js reads the same query); this
+   * collapses every transition and keyframe so nothing else animates either. Not `none` —
+   * a near-zero duration still fires transitionend, which some state machines wait on.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    :root {
+      --dur-fast: 0.01ms;
+      --dur-base: 0.01ms;
+      --dur-slow: 0.01ms;
+    }
+  }
+
+  /*
+   * Reduced transparency. Glass becomes an opaque panel — the blur is what the setting is
+   * asking us to drop, and a fully opaque surface is the honest substitute.
+   */
+  @media (prefers-reduced-transparency: reduce) {
+    :root {
+      --glass-bg: var(--surface);
+      --glass-blur: 0px;
+    }
+  }
+
+  /*
+   * More contrast. Borders stop being hints and become lines; muted text moves up to the
+   * body colour rather than staying a shade of grey.
+   */
+  @media (prefers-contrast: more) {
+    :root {
+      --border: color-mix(in oklab, var(--starlight) 38%, transparent);
+      --border-strong: color-mix(in oklab, var(--starlight) 62%, transparent);
+      --text-muted: var(--starlight);
+      --text-dim: var(--dust);
+      --glass-bg: var(--surface);
+    }
+  }
 }

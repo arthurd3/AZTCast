@@ -36,6 +36,6 @@ public class IngestionRateLimitConfiguration implements WebMvcConfigurer {
             return;
         }
         registry.addInterceptor(new RateLimitInterceptor(limiter))
-                .addPathPatterns("/api/v1/videos", "/api/v1/video/download");
+                .addPathPatterns("/api/v1/videos", "/api/v1/video/download", "/api/v1/videos/*/repair");
     }
 }

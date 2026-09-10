@@ -1,0 +1,13 @@
+<!-- The header mark. Richer than the favicon, which has to survive being 16px wide. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5ec8f0"/>
+      <stop offset="1" stop-color="#a06ff0"/>
+    </linearGradient>
+  </defs>
+  <circle cx="16" cy="16" r="9" fill="url(#body)"/>
+  <ellipse cx="16" cy="16" rx="15" ry="5.5" fill="none" stroke="#f2f3f8"
+           stroke-opacity=".5" stroke-width="1.6" transform="rotate(-24 16 16)"/>
+  <path d="M13.6 11.8v8.4l7-4.2z" fill="#0b0d16"/>
+</svg>

@@ -8,22 +8,34 @@ import static org.mockito.BDDMockito.given;
 import com.azt.streaming.acquisition.domain.TorrentDownloadException;
 import com.azt.streaming.acquisition.domain.TorrentDownloader;
 import com.azt.streaming.ingestion.domain.MagnetRegistry;
+import com.azt.streaming.ingestion.domain.RepairAction;
 import com.azt.streaming.ingestion.infrastructure.InMemoryStreamJobRepository;
 import com.azt.streaming.ingestion.domain.StreamJob;
 import com.azt.streaming.ingestion.domain.StreamJobNotFoundException;
 import com.azt.streaming.ingestion.domain.StreamJobStatus;
+import com.azt.streaming.ingestion.domain.VideoNotRepairableException;
 import com.azt.streaming.shared.storage.MediaStorage;
+import com.azt.streaming.shared.storage.VideoCatalog;
+import com.azt.streaming.transcoding.domain.AudioPlan;
+import com.azt.streaming.transcoding.domain.AudioPreferences;
+import com.azt.streaming.transcoding.domain.ProbedAudio;
+import com.azt.streaming.transcoding.domain.LadderReport;
 import com.azt.streaming.transcoding.domain.MediaTranscoder;
+import com.azt.streaming.transcoding.domain.UndecodableAudioPolicy;
 import com.azt.streaming.transcoding.domain.TranscodingException;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.IntConsumer;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -35,6 +47,7 @@ class IngestionServiceTest {
     private static final Path VIDEO_FILE = Path.of("/downloads/x/movie.mkv");
 
     @Mock private MediaStorage mediaStorage;
+    @Mock private VideoCatalog videoCatalog;
     @Mock private TorrentDownloader torrentDownloader;
     @Mock private MediaTranscoder mediaTranscoder;
 
@@ -63,6 +76,7 @@ class IngestionServiceTest {
         service =
                 new IngestionService(
                         mediaStorage,
+                        videoCatalog,
                         torrentDownloader,
                         mediaTranscoder,
                         jobRepository,
@@ -77,7 +91,7 @@ class IngestionServiceTest {
 
     @Test
     void returnsImmediatelyWithTheJobDownloading() {
-        given(torrentDownloader.download(any(), any())).willReturn(new CompletableFuture<>());
+        given(torrentDownloader.download(any(), any(), any(), any())).willReturn(new CompletableFuture<>());
 
         StreamJob job = service.startIngestion(MAGNET);
 
@@ -89,9 +103,9 @@ class IngestionServiceTest {
     @Test
     void reachesReadyOnlyAfterTranscodingCompletes() {
         CompletableFuture<Void> transcode = new CompletableFuture<>();
-        given(torrentDownloader.download(any(), any()))
+        given(torrentDownloader.download(any(), any(), any(), any()))
                 .willReturn(CompletableFuture.completedFuture(VIDEO_FILE));
-        given(mediaTranscoder.transcodeToHls(any(), any())).willReturn(transcode);
+        given(mediaTranscoder.transcodeToHls(any(), any(), any())).willReturn(transcode);
 
         String videoId = service.startIngestion(MAGNET).videoId();
 
@@ -104,10 +118,25 @@ class IngestionServiceTest {
     }
 
     @Test
-    void recordsTranscodingFailuresThatUsedToVanish() {
-        given(torrentDownloader.download(any(), any()))
+    void recordsTheDownloadedFilenameAndTheMagnetItCameFrom() {
+        // The filename is the only human-readable name this pipeline ever sees, and it is gone once
+        // the reaper takes the download directory. The magnet is the only way back to the source at
+        // all — job state is in memory by default and the claim is keyed by infohash — so without
+        // it a video that later loses a segment cannot be repaired.
+        given(torrentDownloader.download(any(), any(), any(), any()))
                 .willReturn(CompletableFuture.completedFuture(VIDEO_FILE));
-        given(mediaTranscoder.transcodeToHls(any(), any()))
+        given(mediaTranscoder.transcodeToHls(any(), any(), any())).willReturn(new CompletableFuture<>());
+
+        String videoId = service.startIngestion(MAGNET).videoId();
+
+        Mockito.verify(videoCatalog).record(videoId, "movie.mkv", MAGNET);
+    }
+
+    @Test
+    void recordsTranscodingFailuresThatUsedToVanish() {
+        given(torrentDownloader.download(any(), any(), any(), any()))
+                .willReturn(CompletableFuture.completedFuture(VIDEO_FILE));
+        given(mediaTranscoder.transcodeToHls(any(), any(), any()))
                 .willReturn(
                         CompletableFuture.failedFuture(new TranscodingException("ffmpeg exited with code 1")));
 
@@ -119,7 +148,7 @@ class IngestionServiceTest {
 
     @Test
     void recordsAcquisitionFailures() {
-        given(torrentDownloader.download(any(), any()))
+        given(torrentDownloader.download(any(), any(), any(), any()))
                 .willReturn(
                         CompletableFuture.failedFuture(new TorrentDownloadException("No video file found")));
 
@@ -131,9 +160,9 @@ class IngestionServiceTest {
 
     @Test
     void exposesTheStreamUrlOnlyWhenReady() {
-        given(torrentDownloader.download(any(), any()))
+        given(torrentDownloader.download(any(), any(), any(), any()))
                 .willReturn(CompletableFuture.completedFuture(VIDEO_FILE));
-        given(mediaTranscoder.transcodeToHls(any(), any()))
+        given(mediaTranscoder.transcodeToHls(any(), any(), any()))
                 .willReturn(CompletableFuture.completedFuture(null));
 
         String videoId = service.startIngestion(MAGNET).videoId();
@@ -147,7 +176,238 @@ class IngestionServiceTest {
         assertThatThrownBy(() -> service.findJob("nope")).isInstanceOf(StreamJobNotFoundException.class);
     }
 
+    @Test
+    void publishesDownloadProgressOntoTheJob() {
+        // The percentage the swarm reports is the only measured progress in the pipeline, and it used
+        // to reach a log line and nothing else — so a caller polling the job could not tell a torrent
+        // moving at 90% from one stuck at 2%.
+        given(torrentDownloader.download(any(), any(), any(), any())).willReturn(new CompletableFuture<>());
+
+        String videoId = service.startIngestion(MAGNET).videoId();
+        progressSink().accept(42);
+
+        assertThat(service.findJob(videoId).progressPercent()).isEqualTo(42);
+    }
+
+    @Test
+    void ignoresProgressOnceTheDownloadIsOver() {
+        // A tick already in flight can land after the download completes. Without the status guard it
+        // would write DOWNLOADING back over TRANSCODING, and the job would claim to be downloading
+        // for the whole of a transcode that is already running.
+        given(torrentDownloader.download(any(), any(), any(), any()))
+                .willReturn(CompletableFuture.completedFuture(VIDEO_FILE));
+        given(mediaTranscoder.transcodeToHls(any(), any(), any())).willReturn(new CompletableFuture<>());
+
+        String videoId = service.startIngestion(MAGNET).videoId();
+        progressSink().accept(99);
+
+        StreamJob job = service.findJob(videoId);
+        assertThat(job.status()).isEqualTo(StreamJobStatus.TRANSCODING);
+        assertThat(job.progressPercent()).as("the download did finish").isEqualTo(100);
+    }
+
+    @Test
+    void keepsHowFarADownloadGotWhenItFails() {
+        CompletableFuture<Path> download = new CompletableFuture<>();
+        given(torrentDownloader.download(any(), any(), any(), any())).willReturn(download);
+
+        String videoId = service.startIngestion(MAGNET).videoId();
+        progressSink().accept(37);
+        download.completeExceptionally(new TorrentDownloadException("No seeders"));
+
+        StreamJob job = service.findJob(videoId);
+        assertThat(job.status()).isEqualTo(StreamJobStatus.FAILED);
+        assertThat(job.progressPercent()).as("not reset to the 0% the job started at").isEqualTo(37);
+    }
+
+    @Test
+    void listsOnlyIngestionsStillRunning() {
+        // What a refreshed browser asks for: the downloads it can still pick back up.
+        given(torrentDownloader.download(any(), any(), any(), any()))
+                .willReturn(new CompletableFuture<>())
+                .willReturn(CompletableFuture.completedFuture(VIDEO_FILE));
+        given(mediaTranscoder.transcodeToHls(any(), any(), any()))
+                .willReturn(CompletableFuture.completedFuture(null));
+
+        String running = service.startIngestion(MAGNET).videoId();
+        String finished = service.startIngestion(MAGNET + "2").videoId();
+
+        assertThat(service.listActiveJobs()).extracting(StreamJob::videoId).containsExactly(running);
+        assertThat(service.findJob(finished).status()).isEqualTo(StreamJobStatus.READY);
+    }
+
+    /** The progress callback the service handed to the downloader. */
+    private IntConsumer progressSink() {
+        ArgumentCaptor<IntConsumer> captor = ArgumentCaptor.forClass(IntConsumer.class);
+        Mockito.verify(torrentDownloader).download(any(), any(), any(), captor.capture());
+        return captor.getValue();
+    }
+
     private StreamJobStatus status(String videoId) {
         return jobRepository.findById(videoId).map(StreamJob::status).orElseThrow();
+    }
+
+    // --- repair ---------------------------------------------------------------------------------
+
+    private static final String BROKEN_MANIFEST = "no variant is playable outside Apple's platforms";
+
+    /** A ladder whose media survived and whose playlists did not. */
+    private void givenManifestOnlyFault() {
+        given(mediaTranscoder.inspect(VIDEO_ID))
+                .willReturn(new LadderReport(List.of(BROKEN_MANIFEST), true));
+    }
+
+    private static final String VIDEO_ID = "29dd7faa-3d34-48e2-abd4-732ed5b9abe5";
+
+    @Test
+    void repairingASoundVideoStartsNoWork() {
+        given(mediaTranscoder.inspect(VIDEO_ID)).willReturn(LadderReport.sound());
+
+        assertThat(service.repair(VIDEO_ID)).isEqualTo(RepairAction.NOTHING_TO_DO);
+
+        Mockito.verify(mediaTranscoder, Mockito.never()).republish(any(), any());
+        Mockito.verify(mediaTranscoder, Mockito.never()).transcodeToHls(any(), any(), any());
+        Mockito.verify(torrentDownloader, Mockito.never()).download(any(), any(), any(), any());
+    }
+
+    @Test
+    void rebuildsOnlyTheManifestsWhenTheMediaSurvived() {
+        // The cheap tier, and the one that fixes a library published by a version of this service
+        // that advertised a codec the browser refused. Re-encoding would spend minutes producing
+        // bit-identical segments.
+        givenManifestOnlyFault();
+        given(mediaStorage.existingDownload(VIDEO_ID)).willReturn(Optional.of(VIDEO_FILE));
+        given(mediaTranscoder.republish(VIDEO_FILE, VIDEO_ID)).willReturn(CompletableFuture.completedFuture(null));
+
+        assertThat(service.repair(VIDEO_ID)).isEqualTo(RepairAction.MANIFESTS_REBUILT);
+
+        Mockito.verify(mediaTranscoder).republish(VIDEO_FILE, VIDEO_ID);
+        Mockito.verify(mediaTranscoder, Mockito.never()).transcodeToHls(any(), any(), any());
+        // Nothing is discarded: those segments are the thing worth keeping.
+        Mockito.verify(mediaStorage, Mockito.never()).discardIncompleteHls(any());
+    }
+
+    @Test
+    void transcodesAgainWhenSegmentsAreGoneButTheDownloadIsNot() {
+        given(mediaTranscoder.inspect(VIDEO_ID))
+                .willReturn(new LadderReport(List.of("720p.m3u8 references 3 missing or empty file(s)"), false));
+        given(mediaStorage.existingDownload(VIDEO_ID)).willReturn(Optional.of(VIDEO_FILE));
+        given(mediaTranscoder.transcodeToHls(any(), any(), any())).willReturn(CompletableFuture.completedFuture(null));
+
+        assertThat(service.repair(VIDEO_ID)).isEqualTo(RepairAction.RETRANSCODED);
+
+        Mockito.verify(mediaStorage).discardIncompleteHls(VIDEO_ID);
+        Mockito.verify(mediaTranscoder).transcodeToHls(any(), any(), any());
+        Mockito.verify(torrentDownloader, Mockito.never()).download(any(), any(), any(), any());
+    }
+
+    @Test
+    void fetchesTheTorrentAgainWhenTheDownloadIsGoneToo() {
+        given(mediaTranscoder.inspect(VIDEO_ID))
+                .willReturn(new LadderReport(List.of("720p.m3u8 is missing or unreadable"), false));
+        given(mediaStorage.existingDownload(VIDEO_ID)).willReturn(Optional.empty());
+        given(videoCatalog.sourceMagnetOf(VIDEO_ID)).willReturn(Optional.of(MAGNET));
+        given(mediaStorage.downloadDirectoryFor(VIDEO_ID)).willReturn(Path.of("/downloads/x"));
+        given(torrentDownloader.download(any(), any(), any(), any())).willReturn(new CompletableFuture<>());
+
+        assertThat(service.repair(VIDEO_ID)).isEqualTo(RepairAction.REFETCHED);
+
+        Mockito.verify(torrentDownloader).download(Mockito.eq(VIDEO_ID), Mockito.eq(MAGNET), any(), any());
+    }
+
+    @Test
+    void refusesAVideoWithNothingLeftToRebuildItFrom() {
+        // Broken media, no download, and a sidecar written before the magnet was ever recorded.
+        // Nothing on this host knows where those bytes came from.
+        given(mediaTranscoder.inspect(VIDEO_ID))
+                .willReturn(new LadderReport(List.of("240p.m3u8 references 12 missing or empty file(s)"), false));
+        given(mediaStorage.existingDownload(VIDEO_ID)).willReturn(Optional.empty());
+        given(videoCatalog.sourceMagnetOf(VIDEO_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.repair(VIDEO_ID))
+                .isInstanceOf(VideoNotRepairableException.class)
+                .hasMessageContaining("no magnet was recorded");
+    }
+
+    @Test
+    void aRepairIsFollowableOnTheSameEndpointAsAnIngestion() {
+        // And under the same id. Re-ingesting would mint a second videoId and leave the first one
+        // broken and listed; a viewer's link, the library card and the keep marker are all this id.
+        givenManifestOnlyFault();
+        given(mediaStorage.existingDownload(VIDEO_ID)).willReturn(Optional.of(VIDEO_FILE));
+        given(mediaTranscoder.republish(any(), any())).willReturn(CompletableFuture.completedFuture(null));
+
+        service.repair(VIDEO_ID);
+
+        assertThat(jobRepository.findById(VIDEO_ID)).isPresent();
+        assertThat(jobRepository.findById(VIDEO_ID).orElseThrow().status()).isEqualTo(StreamJobStatus.READY);
+        assertThat(jobRepository.findById(VIDEO_ID).orElseThrow().videoId()).isEqualTo(VIDEO_ID);
+    }
+
+    @Test
+    void aRepairThatFailsLeavesTheReasonOnTheJob() {
+        givenManifestOnlyFault();
+        given(mediaStorage.existingDownload(VIDEO_ID)).willReturn(Optional.of(VIDEO_FILE));
+        given(mediaTranscoder.republish(any(), any()))
+                .willReturn(CompletableFuture.failedFuture(new TranscodingException("still not publishable")));
+
+        service.repair(VIDEO_ID);
+
+        StreamJob job = jobRepository.findById(VIDEO_ID).orElseThrow();
+        assertThat(job.status()).isEqualTo(StreamJobStatus.FAILED);
+        assertThat(job.failureReason()).contains("still not publishable");
+    }
+
+    private static final ProbedAudio SURROUND = new ProbedAudio(0, "eac3", null, 6, 48000, "eng", null, true);
+
+    private static final AudioPreferences PRESERVE =
+            new AudioPreferences(List.of("aac"), 0, 0, 64, 512, UndecodableAudioPolicy.PASSTHROUGH);
+
+    @Test
+    @DisplayName("rebuilds only the audio when the host has gained a decoder since")
+    void rebuildsAudioThatCanNowBeDoneBetter() {
+        // The ladder is complete, playable and listed. Nothing is wrong with it — and it carries an
+        // ec-3 track that only Apple decodes, because the build that made it had no decoder. That
+        // difference is invisible to every other check in the system.
+        given(mediaTranscoder.inspect(VIDEO_ID))
+                .willReturn(new LadderReport(
+                        List.of(), true, Optional.of(new LadderReport.PublishedAudio("ec-3", 6))));
+        given(mediaStorage.existingDownload(VIDEO_ID)).willReturn(Optional.of(VIDEO_FILE));
+        given(mediaTranscoder.plannedAudio(VIDEO_FILE)).willReturn(AudioPlan.encode(SURROUND, "aac", PRESERVE));
+        given(mediaTranscoder.rebuildAudio(VIDEO_FILE, VIDEO_ID)).willReturn(CompletableFuture.completedFuture(null));
+
+        assertThat(service.repair(VIDEO_ID)).isEqualTo(RepairAction.AUDIO_REBUILT);
+
+        Mockito.verify(mediaTranscoder).rebuildAudio(VIDEO_FILE, VIDEO_ID);
+        // The video rungs are already correct; re-encoding them would produce identical bytes.
+        Mockito.verify(mediaTranscoder, Mockito.never()).transcodeToHls(any(), any(), any());
+        Mockito.verify(mediaStorage, Mockito.never()).discardIncompleteHls(any());
+    }
+
+    @Test
+    @DisplayName("and does not rebuild it again once it matches")
+    void leavesAudioAloneOnceItIsTheBestThisHostCanDo() {
+        given(mediaTranscoder.inspect(VIDEO_ID))
+                .willReturn(new LadderReport(
+                        List.of(), true, Optional.of(new LadderReport.PublishedAudio("mp4a.40.2", 6))));
+        given(mediaStorage.existingDownload(VIDEO_ID)).willReturn(Optional.of(VIDEO_FILE));
+        given(mediaTranscoder.plannedAudio(VIDEO_FILE)).willReturn(AudioPlan.encode(SURROUND, "aac", PRESERVE));
+
+        assertThat(service.repair(VIDEO_ID)).isEqualTo(RepairAction.NOTHING_TO_DO);
+
+        Mockito.verify(mediaTranscoder, Mockito.never()).rebuildAudio(any(), any());
+    }
+
+    @Test
+    @DisplayName("a sound ladder whose source is gone is left alone rather than probed")
+    void doesNotLookForABetterAudioWithoutASource() {
+        given(mediaTranscoder.inspect(VIDEO_ID))
+                .willReturn(new LadderReport(
+                        List.of(), true, Optional.of(new LadderReport.PublishedAudio("ec-3", 6))));
+        given(mediaStorage.existingDownload(VIDEO_ID)).willReturn(Optional.empty());
+
+        assertThat(service.repair(VIDEO_ID)).isEqualTo(RepairAction.NOTHING_TO_DO);
+
+        Mockito.verify(mediaTranscoder, Mockito.never()).plannedAudio(any());
     }
 }

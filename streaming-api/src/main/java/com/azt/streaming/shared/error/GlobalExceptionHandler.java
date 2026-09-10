@@ -2,7 +2,9 @@ package com.azt.streaming.shared.error;
 
 import com.azt.streaming.acquisition.domain.TorrentDownloadException;
 import com.azt.streaming.ingestion.domain.StreamJobNotFoundException;
+import com.azt.streaming.ingestion.domain.VideoNotRepairableException;
 import com.azt.streaming.playback.domain.AssetNotFoundException;
+import com.azt.streaming.shared.storage.VideoNotFoundException;
 import com.azt.streaming.shared.ratelimit.RateLimitExceededException;
 import com.azt.streaming.transcoding.domain.TranscodingException;
 import jakarta.validation.ConstraintViolation;
@@ -55,6 +57,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     /**
+     * Separate from the job case, because they mean opposite things. A missing job with media
+     * present is normal; a missing video is the reaper having already been through.
+     */
+    @ExceptionHandler(VideoNotFoundException.class)
+    public ProblemDetail handleVideoNotFound(VideoNotFoundException e) {
+        return problem(HttpStatus.NOT_FOUND, ProblemTypes.VIDEO_NOT_FOUND, "Video not found", e.getMessage());
+    }
+
+    /**
      * A specific handler is required, not optional: without it the catch-all {@code Exception}
      * handler below would turn every throttled request into a logged 500.
      */
@@ -80,6 +91,25 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 ProblemTypes.ACQUISITION_FAILED,
                 "Acquisition failed",
                 e.getMessage());
+    }
+
+    /**
+     * A video that is broken and cannot be rebuilt from anything on this host.
+     *
+     * <p>422 rather than 404 or 409: the video is there, the request was well formed and
+     * understood, and it cannot be carried out — which is exactly what Unprocessable Content means.
+     * A 404 would say the video does not exist, and it does; a 500 would claim this is our mistake
+     * to fix, and it is not fixable at all.
+     */
+    @ExceptionHandler(VideoNotRepairableException.class)
+    ResponseEntity<ProblemDetail> handleNotRepairable(VideoNotRepairableException e) {
+        log.warn("Repair refused: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(problem(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        ProblemTypes.NOT_REPAIRABLE,
+                        "Cannot be repaired",
+                        e.getMessage()));
     }
 
     @ExceptionHandler(TranscodingException.class)

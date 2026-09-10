@@ -23,27 +23,25 @@ class ProbedVideoTest {
         "Baseline, 30, avc1.42001e",
     })
     @DisplayName("builds the RFC 6381 string from what the encoder actually produced")
-    void mapsProfileAndLevelToTheCodecString(String profile, int level, String expectedVideo) {
-        ProbedVideo probed = new ProbedVideo(true, true, profile, level);
-
-        assertThat(probed.codecs()).isEqualTo(expectedVideo + ",mp4a.40.2");
+    void mapsProfileAndLevelToTheCodecString(String profile, int level, String expected) {
+        assertThat(ProbedVideo.measured(true, profile, level).codecs()).isEqualTo(expected);
     }
 
     @Test
-    void omitsTheAudioCodecWhenThereIsNoAudioTrack() {
-        // Advertising mp4a on a rung with no audio is the same class of error as the wrong level:
-        // the player provisions a decoder for a stream that never arrives.
-        ProbedVideo silent = new ProbedVideo(true, false, "Main", 31);
-
-        assertThat(silent.codecs()).isEqualTo("avc1.4d001f");
+    @DisplayName("names only the video, because the audio it plays with is not this rung's to know")
+    void neverAppendsAnAudioCodec() {
+        // Audio lives in its own rendition group now, so a variant's own probe reports video only.
+        // Joining the two is the master playlist's job — it is the only thing that knows which group
+        // a variant was pointed at, and whether that group turned out to be AAC or a copied ec-3.
+        assertThat(ProbedVideo.measured(true, "Main", 31).codecs()).isEqualTo("avc1.4d001f");
+        assertThat(ProbedVideo.measured(false, "Main", 31).codecs()).isEqualTo("avc1.4d001f");
     }
 
     @Test
     void fallsBackToMainForAProfileItDoesNotRecognise() {
         // An unknown profile should still yield a syntactically valid, plausible string rather than
         // a malformed attribute that a player cannot parse at all.
-        assertThat(new ProbedVideo(true, true, "Some Future Profile", 31).codecs())
-                .isEqualTo("avc1.4d001f,mp4a.40.2");
-        assertThat(new ProbedVideo(true, true, null, 31).codecs()).isEqualTo("avc1.4d001f,mp4a.40.2");
+        assertThat(ProbedVideo.measured(true, "Some Future Profile", 31).codecs()).isEqualTo("avc1.4d001f");
+        assertThat(ProbedVideo.measured(true, null, 31).codecs()).isEqualTo("avc1.4d001f");
     }
 }

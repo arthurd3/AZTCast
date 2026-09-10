@@ -2,6 +2,7 @@ package com.azt.streaming.transcoding.domain;
 
 import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.IntConsumer;
 
 /**
  * Stage two of the pipeline: turn a media file into an HLS rendition ladder.
@@ -19,11 +20,58 @@ import java.util.concurrent.CompletableFuture;
 public interface MediaTranscoder {
 
     /**
-     * Transcodes {@code inputFile} into the configured HLS ladder under {@code videoId}.
+     * Transcodes {@code inputFile} into an HLS ladder suited to it, under {@code videoId}.
      *
+     * @param onProgress called with whole percentages as the encode advances. Invoked from the
+     *     process's output-drain thread, so it must not block — see {@code FfmpegProgress}.
      * @return a future that completes when every rendition and the master playlist are written, or
      *     completes exceptionally if any rung fails. Callers must chain it — discarding it is how
      *     transcoding failures used to disappear silently.
      */
-    CompletableFuture<Void> transcodeToHls(Path inputFile, String videoId);
+    CompletableFuture<Void> transcodeToHls(Path inputFile, String videoId, IntConsumer onProgress);
+
+    /**
+     * Rebuilds the manifests for a ladder whose media is already on disk and sound.
+     *
+     * <p>The repair path for the case that costs nothing to fix: segments that are all present and
+     * correct, described by a master playlist no browser will accept. Re-encoding them would take
+     * minutes to produce bit-identical output. This re-measures what is there and writes the
+     * manifests again, in seconds.
+     *
+     * <p>It still needs the source file, because the audio and subtitle renditions are described by
+     * decisions made from it — which language the audio is, what each subtitle track is called.
+     *
+     * @throws TranscodingException if the output cannot be measured or the rebuilt ladder would
+     *     still not be publishable
+     */
+    CompletableFuture<Void> republish(Path inputFile, String videoId);
+
+    /**
+     * What is wrong with the ladder already published under {@code videoId}, if anything.
+     *
+     * <p>Asked of the transcoder because the transcoder is what published it: the shape of a ladder
+     * — which playlists exist, what a variant is allowed to declare, what an fMP4 rung cannot be
+     * decoded without — is knowledge that lives here and nowhere else.
+     *
+     * <p>Synchronous and cheap. It reads the playlists and stats the files they name; it opens no
+     * media and starts no process.
+     */
+    LadderReport inspect(String videoId);
+
+    /**
+     * What this build would publish as the audio rendition for {@code inputFile}, right now.
+     *
+     * <p>Compared against what {@link #inspect} read off the published master, this is how a repair
+     * decides that a host has gained a decoder since the ingestion — the one difference nothing
+     * else in the system would ever notice, because the ladder is perfectly intact either way.
+     */
+    AudioPlan plannedAudio(Path inputFile);
+
+    /**
+     * Re-encodes the shared audio rendition and rewrites the manifests, leaving the video alone.
+     *
+     * <p>Seconds rather than minutes: the rungs are already correct and re-encoding them would
+     * produce identical bytes.
+     */
+    CompletableFuture<Void> rebuildAudio(Path inputFile, String videoId);
 }

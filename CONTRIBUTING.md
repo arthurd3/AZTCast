@@ -12,9 +12,10 @@ see the script's output.
 ## The loop
 
 ```bash
-make dev     # run both applications
-make test    # API tests + ArchUnit rules
-make lint    # player lint and format check
+make dev       # run both applications
+make dev-down  # stop a run that outlived its terminal
+make test      # API tests + ArchUnit rules
+make lint      # player lint and format check
 ```
 
 `make test` must pass before a pull request. It includes the architecture

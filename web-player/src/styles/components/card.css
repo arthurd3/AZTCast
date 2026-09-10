@@ -1,0 +1,420 @@
+/*
+ * The library grid and its cards.
+ *
+ * The grid sizes against its *container*, not the viewport, which is what lets the same
+ * component render as a full page grid on the library and as a narrow rail on the watch page
+ * without a second stylesheet. Cards also grow on wide screens instead of merely multiplying:
+ * every study of media browsing says a bigger poster beats more posters.
+ */
+@layer components {
+  .library-section {
+    container-type: inline-size;
+  }
+
+  .library {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+    gap: var(--space-5);
+  }
+
+  @container (min-width: 720px) {
+    .library {
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+    }
+  }
+
+  @container (min-width: 1100px) {
+    .library {
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+    }
+  }
+
+  /* The watch page's "keep exploring" strip: one row, scrolled sideways, snapping. */
+  .library--rail {
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(240px, 260px);
+    grid-template-columns: none;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    padding-bottom: var(--space-3);
+    scrollbar-width: thin;
+  }
+
+  .library--rail > * {
+    scroll-snap-align: start;
+  }
+
+  /*
+   * The grid item, and the positioning context for the save toggle.
+   *
+   * It exists because .video-card is a <button> and the toggle is another one: nesting them
+   * would be invalid HTML, which browsers recover from by dropping one — and which one is not
+   * something to build on. Siblings instead, stacked here.
+   */
+  .video-card-shell {
+    position: relative;
+    display: flex;
+  }
+
+  .video-card-shell > .video-card {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /*
+   * Sits over the poster, opposite the quality badges so the two never collide. Visible at all
+   * times rather than on hover: it is the only affordance saying a video can be kept at all, and
+   * a control that appears on hover does not exist on a touchscreen.
+   */
+  .video-card__keep {
+    position: absolute;
+    top: var(--space-2);
+    left: var(--space-2);
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: color-mix(in oklab, var(--void) 70%, transparent);
+    backdrop-filter: blur(8px);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition:
+      color var(--dur-base) var(--ease-out),
+      border-color var(--dur-base) var(--ease-out);
+  }
+
+  .video-card__keep:hover:not(:disabled) {
+    color: var(--text);
+  }
+
+  .video-card__keep:disabled {
+    cursor: progress;
+  }
+
+  .video-card__keep--on {
+    color: var(--accent);
+    border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  }
+
+  .video-card__keep-icon {
+    width: 17px;
+    height: 17px;
+  }
+
+  /*
+   * A <button>, so it is focusable and activates from the keyboard with no hand-rolled
+   * tabindex or keydown handler. Everything below re-states what the bare-element button rule
+   * used to hand it, because that rule is gone.
+   */
+  .video-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: 0;
+    background: none;
+    border: none;
+    text-align: left;
+    color: inherit;
+    cursor: pointer;
+    transition: transform var(--dur-base) var(--ease-out);
+  }
+
+  .video-card:hover {
+    transform: translateY(-4px);
+  }
+
+  .video-card:focus-visible {
+    outline: none;
+  }
+
+  /* Fixed ratio so cards hold their height whether or not a poster loads, and the grid does
+     not reflow as lazy images arrive. */
+  .video-card__thumb {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+    transition:
+      border-color var(--dur-base) var(--ease-out),
+      box-shadow var(--dur-base) var(--ease-out);
+  }
+
+  .video-card:hover .video-card__thumb {
+    border-color: color-mix(in oklab, var(--accent) 55%, transparent);
+    box-shadow: var(--shadow-md), var(--glow-accent);
+  }
+
+  .video-card:focus-visible .video-card__thumb {
+    box-shadow: var(--focus-ring);
+    border-color: var(--accent);
+  }
+
+  .video-card__thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* No poster: anything encoded before posters existed, or a source ffmpeg found no frame in. */
+  .video-card__thumb--empty::after {
+    content: '';
+    width: 38%;
+    aspect-ratio: 1;
+    background: currentColor;
+    color: var(--text-dim);
+    opacity: 0.28;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 5h18v14H3z' fill='none' stroke='%23000' stroke-width='1.5'/%3E%3Cpath d='M3 9h18M7 5v4M12 5v4M17 5v4' stroke='%23000' stroke-width='1.5'/%3E%3C/svg%3E")
+      center / contain no-repeat;
+  }
+
+  /* Scrim under the badges and the resume bar, so neither vanishes into a pale poster. */
+  .video-card__thumb::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, oklch(0% 0 0 / 62%) 0%, transparent 42%);
+    opacity: 0.9;
+  }
+
+  /* The play affordance. Replaces the video preview a hover would otherwise want — hls.js is
+     575 kB and deliberately absent from this page (ADR-0011). */
+  .video-card__play {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    opacity: 0;
+    transition: opacity var(--dur-base) var(--ease-out);
+  }
+
+  .video-card:hover .video-card__play,
+  .video-card:focus-visible .video-card__play {
+    opacity: 1;
+  }
+
+  .video-card__play span {
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    border-radius: var(--radius-full);
+    background: color-mix(in oklab, var(--void) 62%, transparent);
+    backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--shadow-md);
+    transform: scale(0.86);
+    transition: transform var(--dur-base) var(--ease-out);
+  }
+
+  .video-card:hover .video-card__play span {
+    transform: scale(1);
+  }
+
+  .video-card__play svg {
+    width: 22px;
+    height: 22px;
+    margin-left: 3px;
+    fill: var(--text);
+  }
+
+  .video-card__badges {
+    position: absolute;
+    top: var(--space-2);
+    right: var(--space-2);
+    display: flex;
+    gap: var(--space-1);
+  }
+
+  .badge {
+    padding: 2px var(--space-2);
+    border-radius: var(--radius-xs);
+    background: color-mix(in oklab, var(--void) 70%, transparent);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+  }
+
+  .badge--accent {
+    color: var(--accent);
+    border-color: color-mix(in oklab, var(--accent) 40%, transparent);
+  }
+
+  /* How far in this viewer already is. Written by player/progressStore.js. */
+  .video-card__resume {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 3px;
+    background: color-mix(in oklab, var(--starlight) 18%, transparent);
+  }
+
+  .video-card__resume span {
+    display: block;
+    height: 100%;
+    background: var(--gradient-action);
+    /* Never a hairline: a 1% resume should still be visible as "started". */
+    min-width: 4px;
+  }
+
+  .video-card__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .video-card__title {
+    font-family: var(--font-display);
+    font-size: var(--text-base);
+    font-weight: 500;
+    line-height: var(--leading-snug);
+    /* Two lines, then ellipsis — torrent filenames are long, and an uncapped title would
+       leave the grid's rows ragged. The full name is on the watch page, which wraps it. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+
+  .video-card:hover .video-card__title {
+    color: var(--accent);
+  }
+
+  .video-card__meta {
+    font-size: var(--text-sm);
+    color: var(--text-dim);
+  }
+
+  /* ---- Toolbar above the grid ---- */
+
+  .library-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-5);
+  }
+
+  .library-toolbar__search {
+    flex: 1 1 18rem;
+    position: relative;
+  }
+
+  .library-toolbar__search .input {
+    padding-inline-start: var(--space-7);
+  }
+
+  .library-toolbar__search svg {
+    position: absolute;
+    left: var(--space-4);
+    top: 50%;
+    translate: 0 -50%;
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: var(--text-dim);
+    stroke-width: 2;
+    pointer-events: none;
+  }
+
+  .library-toolbar__count {
+    font-size: var(--text-sm);
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- Empty and error states ---- */
+
+  .library-note {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-8) var(--space-5);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-lg);
+    text-align: center;
+  }
+
+  .library-note__art {
+    width: 140px;
+    height: 90px;
+    opacity: 0.9;
+  }
+
+  .library-note__title {
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+    font-weight: 600;
+  }
+
+  .library-note__body {
+    max-width: 44ch;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+
+  .library-note--error {
+    border-style: solid;
+    border-color: color-mix(in oklab, var(--danger) 45%, transparent);
+    background: var(--danger-quiet);
+  }
+
+  .library-note--error .library-note__title {
+    color: var(--danger);
+  }
+
+  /* ---- Skeleton card, same geometry as the real one ---- */
+
+  .skeleton-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .skeleton-card__thumb {
+    aspect-ratio: 16 / 9;
+    border-radius: var(--radius-md);
+  }
+
+  .skeleton-card__line {
+    height: 0.85rem;
+    border-radius: var(--radius-xs);
+  }
+
+  .skeleton-card__line--short {
+    width: 55%;
+  }
+}
+
+@layer components {
+  /* The card for whatever is currently open on the watch page. Paired with aria-current in
+     videoLibrary.js, so the ring is never the only thing saying so. */
+  .video-card--selected .video-card__thumb {
+    border-color: var(--accent);
+    box-shadow:
+      0 0 0 1px var(--accent),
+      var(--glow-accent);
+  }
+
+  .video-card--selected .video-card__title {
+    color: var(--accent);
+  }
+}

@@ -35,15 +35,27 @@ held for the length of a transfer — see
 ./scripts/check-prereqs.sh
 ```
 
-It also checks that the *configured* encoder exists. Distributions shipping a
-patent-free ffmpeg (Fedora's default among them) carry `libopenh264` rather than
-`libx264`; the `local` profile already selects it.
+It also reports what this particular ffmpeg can do, which is not the same question
+as whether ffmpeg is installed: which H.264 encoder will be picked, which decoders
+are missing, and whether hardware acceleration actually opens. Nothing there fails
+the run — the service adapts to whatever it finds. `video-codec: auto` takes the
+first encoder the build has, so a distribution shipping a patent-free ffmpeg needs
+no profile of its own; a missing audio decoder means that track is copied through or
+dropped rather than failing the ingestion. What each answer costs you is spelled out
+in [docs/troubleshooting-hls.md](docs/troubleshooting-hls.md), and the script names
+the package that would change it.
 
 ## Running it
 
 ```bash
 make dev          # API on :8080, player on :5173
+make dev-down     # stop a leftover run still holding those ports
 ```
+
+`make dev` clears whatever a previous run left behind before it starts, so a
+session that crashed does not block the next one. It only ever signals processes
+belonging to this checkout: if something else holds :8080 or :5173 it names the
+process and stops rather than killing a stranger. `FORCE_PORTS=1` overrides that.
 
 Or separately:
 
@@ -64,13 +76,115 @@ WEB_PORT=8100 docker compose -f deploy/docker-compose.yml up --build -d
 
 nginx serves the player and proxies `/api` to the API on the same origin.
 
+#### Through a VPN
+
+```bash
+cp deploy/vpn.env.example deploy/vpn.env      # then fill in your provider's keys
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.vpn.yml up --build
+```
+
+An overlay, so the stack above still runs without it. The API joins a
+[gluetun](https://github.com/qdm12/gluetun) container's network namespace, so every packet it
+sends — DHT's UDP included — leaves through the tunnel, and gluetun's firewall drops anything
+that would not. Trackers and peers then see the VPN's address instead of this machine's.
+
+**It is not anonymity.** The VPN provider still sees the traffic, and anyone who can compel or
+compromise them is back where they started. What it does is real and it is also all it does.
+Because the API shares the tunnel's namespace, a dropped VPN takes the API offline rather than
+falling back to the open internet — the safe failure, and the reason for doing it this way
+([ADR-0015](docs/decisions/0015-ip-masking-belongs-to-the-network.md)).
+
+Verify it is working:
+
+```bash
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.vpn.yml \
+  exec streaming-api curl -s https://ifconfig.me      # the VPN's address, not yours
+```
+
 ## Using it
 
-Open the player, paste a magnet link, press **Enviar**. It polls the job with a
-backoff and loads the video itself once it is `READY`; a failure shows its
-reason rather than a 404 you have to interpret.
+Four pages. `/` is the library: everything already transcoded, newest first, each
+with a poster frame and the name of the file it came from. Click one and it opens
+on `/player.html?v=<videoId>`, which is where video is watched. `/providers.html` is
+where each download came from — a world map of the peers that served it, drawn from data
+compiled into the build so the page makes no external request at all. `/diagnostics.html`
+is the fourth: it compares what a manifest advertises against what the browser accepts
+and what the server actually serves.
 
-The `videoId` field below it replays something ingested earlier.
+The library is read from disk rather than from job state, so a video is listed for
+as long as its media exists — a restart that loses every job record does not empty
+it. Search and sort act on the listing in the browser, not as a query: the endpoint
+returns everything on disk and the retention window keeps that small.
+
+**Videos you save are not deleted.** Media older than the retention window is reaped
+automatically, which is what keeps the disk from filling; the marker in the corner of
+each card exempts that video from it, and the **Salvos** filter shows only the ones
+you have marked. What persists is the watchable ladder — the raw torrent underneath it
+still expires on schedule, because it is a second full copy of the same video and
+nothing seeds it
+([ADR-0019](docs/decisions/0019-kept-videos-outlive-the-retention-window.md)).
+
+Paste a magnet link on the library page and press **Enviar** to add one. It polls
+the job with a backoff and opens the watch page once it is `READY`; a failure shows
+its reason rather than a 404 you have to interpret. The download step carries a real
+percentage — the swarm reports pieces — while transcoding shows elapsed time only,
+because ffmpeg reports nothing this pipeline reads and a bar that stalls is worse
+than no bar.
+
+**Reloading the page no longer loses the download.** The library asks
+`GET /api/v1/videos/active` on load and picks any ingestion still running back up,
+percentage and elapsed time intact
+([ADR-0013](docs/decisions/0013-an-ingestion-survives-the-page-that-started-it.md)).
+A resumed one does not steal the page: it reports when it is ready rather than
+navigating there on its own.
+
+### Who served it
+
+With `aztcast.streaming.providers.enabled` set, every peer seen for a download is recorded to a
+SQLite file and shown under the progress track while it runs: address and port, the client
+software, **how many bytes it actually sent**, whether it is seeding or still fetching, and how
+often it connected. Point `geoip-city-database` and `geoip-asn-database` at any MaxMind-format
+`.mmdb` — GeoLite2 needs a free account, DB-IP Lite and IP2Location LITE do not — and each
+address also resolves to a country, a city and a network operator, read from that local file.
+
+**`/providers.html` is where it all comes back.** Totals, a world map of every place that
+served something, and one row per video that opens into its peer table. The map has no tile
+layer: country outlines are bundled, so nothing is fetched from anyone and the page works
+offline ([ADR-0016](docs/decisions/0016-the-provenance-map-is-drawn-offline.md)). Positions
+are city-level estimates drawn as areas, never points — GeoIP cannot locate a street, and a
+map that could zoom to one would be lying.
+
+It also ranks who is serving you — by client, country and network — and marks each peer that sits
+on a **probable datacenter or VPN** rather than a home connection, or that has turned up in more
+than one of your downloads. Both are read from the operator name already stored, so neither costs a
+request.
+
+The page reports **the address peers say they see you as**, taken from their handshakes. That is the
+only direct evidence there is that the VPN above is actually masking anything.
+
+It is **off by default**, and worth knowing why before switching it on: peer addresses are
+personal data under the LGPD, so rows expire after 30 days and nothing about a lookup leaves
+this machine. It is also worth knowing the ceiling — BitTorrent exposes an address, a port and
+a self-reported client string, and nothing that names a person
+([ADR-0014](docs/decisions/0014-a-provider-log-in-sqlite.md)).
+
+The player's controls are the application's own, not the browser's
+([ADR-0012](docs/decisions/0012-custom-player-controls.md)): buffered ranges are
+drawn on the seek bar, the quality ladder and playback speed live in one menu, and
+where you stopped is remembered per video in `localStorage` and offered back — never
+seeked to on its own.
+
+Keyboard, on the watch page. `?` shows the same list in the player.
+
+| | |
+| --- | --- |
+| `Espaço` `K` | reproduzir / pausar |
+| `J` `L` | −10 s / +10 s |
+| `←` `→` | −5 s / +5 s |
+| `↑` `↓` | volume |
+| `0`–`9` | saltar para 0%…90% |
+| `<` `>` | velocidade |
+| `M` `F` `P` | mudo, tela cheia, picture-in-picture |
 
 Same thing over HTTP, if you would rather:
 
@@ -144,7 +258,9 @@ VIDEO_ID=<uuid> ./scripts/smoke-test.sh http://localhost:8000
 - [HLS troubleshooting](docs/troubleshooting-hls.md) — codec and MIME checklist
 - [Decision records](docs/decisions/) — MADR, immutable once accepted. The
   recent ones cover the delivery path ([0007](docs/decisions/0007-nginx-serves-the-bytes.md)),
-  the encoding ladder ([0008](docs/decisions/0008-cmaf-ladder-in-one-pass.md)),
+  the encoding ladder ([0008](docs/decisions/0008-cmaf-ladder-in-one-pass.md)) and
+  the copied top rung that supersedes half of it
+  ([0018](docs/decisions/0018-the-top-rung-is-copied-not-encoded.md)),
   Redis ([0009](docs/decisions/0009-redis-for-state-not-for-media.md)) and the
   player driving ingestion ([0010](docs/decisions/0010-the-player-drives-ingestion.md))
 
@@ -160,7 +276,9 @@ honest limit.
 
 Two things that are handled: media older than
 `aztcast.streaming.storage.retention` (7d) is deleted automatically, so filling
-the disk now takes sustained effort rather than one afternoon; and nginx sets
+the disk now takes sustained effort rather than one afternoon — saved videos are
+exempt from that by design, so an instance where everything is saved will still
+fill up; and nginx sets
 `X-Forwarded-For` to `$remote_addr` rather than appending to it, so a client
 cannot choose its own rate-limit bucket by sending its own header.
 

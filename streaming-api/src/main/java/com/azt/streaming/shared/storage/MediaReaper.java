@@ -26,6 +26,19 @@ import org.springframework.stereotype.Component;
  *
  * <p>No distributed lock. Deletion here is idempotent — two instances reaping the same directory is
  * not a race worth coordinating, and the guard would be more machinery than the problem.
+ *
+ * <h2>What "kept" does to that</h2>
+ *
+ * <p>A video marked with {@link VideoCatalog#KEEP_FILE} is never reaped. That deliberately breaks
+ * half of the retention/TTL pairing above, and only the half that is safe to break: the job record
+ * still expires on schedule, so a kept video ends up listed with no job behind it — which is
+ * already the ordinary state of every video after a restart, because the catalogue reads the disk
+ * and not job state. The dangerous direction, a job reporting READY for media that is gone, stays
+ * impossible.
+ *
+ * <p>The marker exempts the HLS ladder only. The raw torrent under {@code downloads} is reaped on
+ * schedule either way: it is a second full copy of the video, it is not what anyone watches, and
+ * nothing seeds it once the download stops.
  */
 @Slf4j
 @Component
@@ -52,13 +65,13 @@ public class MediaReaper {
      */
     @Scheduled(initialDelay = 5, fixedDelay = 60, timeUnit = java.util.concurrent.TimeUnit.MINUTES)
     public void reap() {
-        int removed = reapRoot(hlsRoot) + reapRoot(downloadsRoot);
+        int removed = reapRoot(hlsRoot, true) + reapRoot(downloadsRoot, false);
         if (removed > 0) {
             log.info("Reaped {} media director(ies) older than {}", removed, retention);
         }
     }
 
-    private int reapRoot(Path root) {
+    private int reapRoot(Path root, boolean honourKeepMarkers) {
         if (!Files.isDirectory(root)) {
             return 0;
         }
@@ -66,6 +79,7 @@ public class MediaReaper {
         List<Path> expired;
         try (Stream<Path> entries = Files.list(root)) {
             expired = entries.filter(Files::isDirectory)
+                    .filter(directory -> !(honourKeepMarkers && isKept(directory)))
                     .filter(directory -> lastModified(directory).isBefore(cutoff))
                     .toList();
         } catch (IOException e) {
@@ -74,7 +88,7 @@ public class MediaReaper {
         }
         int removed = 0;
         for (Path directory : expired) {
-            if (deleteRecursively(directory)) {
+            if (MediaDirectories.deleteRecursively(directory)) {
                 removed++;
             }
         }
@@ -99,6 +113,15 @@ public class MediaReaper {
         }
     }
 
+    /**
+     * Whether someone asked for this video to be kept.
+     *
+     * <p>Checked before the mtime rather than after, so a kept directory is never even stat-walked.
+     */
+    private static boolean isKept(Path directory) {
+        return Files.exists(directory.resolve(VideoCatalog.KEEP_FILE));
+    }
+
     private static Instant mtime(Path path) {
         try {
             return Files.getLastModifiedTime(path).toInstant();
@@ -107,16 +130,4 @@ public class MediaReaper {
         }
     }
 
-    private boolean deleteRecursively(Path directory) {
-        try (Stream<Path> tree = Files.walk(directory)) {
-            // Reverse order so children are removed before their parents.
-            for (Path path : tree.sorted(Comparator.reverseOrder()).toList()) {
-                Files.deleteIfExists(path);
-            }
-            return true;
-        } catch (IOException e) {
-            log.warn("Could not delete {}", directory, e);
-            return false;
-        }
-    }
 }

@@ -1,0 +1,250 @@
+/*
+ * The ingestion track: DOWNLOADING -> TRANSCODING -> READY.
+ *
+ * Horizontal nodes on a wire rather than the old vertical "○ ● ✓" list.
+ *
+ * The download step carries a real percentage, because the swarm reports pieces and that number
+ * is measured. Transcoding does not: ffmpeg tells this pipeline nothing, so that segment keeps
+ * the travelling shimmer and no bar. A fake bar stalling at 90% is the single most distrusted
+ * thing in progress UI, and having one honest bar is not a reason to invent a second. Elapsed
+ * time still runs under every stage, so there is always something true that moves.
+ */
+@layer components {
+  .job-progress {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: var(--space-5);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+  }
+
+  .job-track {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    gap: var(--space-2);
+  }
+
+  .job-step {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    padding-top: var(--space-1);
+    text-align: center;
+  }
+
+  /* The wire back to the previous node. Drawn on the step that follows it, so the first has
+     none and no separate connector elements are needed. */
+  .job-step:not(:first-child)::before {
+    content: '';
+    position: absolute;
+    top: calc(var(--space-1) + 9px);
+    right: 50%;
+    left: -50%;
+    height: 2px;
+    margin-inline: var(--space-4);
+    border-radius: var(--radius-full);
+    background: color-mix(in oklab, var(--starlight) 14%, transparent);
+  }
+
+  .job-step__node {
+    position: relative;
+    z-index: var(--z-base);
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    flex: none;
+    border: 2px solid color-mix(in oklab, var(--starlight) 22%, transparent);
+    border-radius: var(--radius-full);
+    background: var(--surface);
+    font-size: 11px;
+    line-height: 1;
+    color: var(--text-dim);
+  }
+
+  .job-step__label {
+    font-size: var(--text-sm);
+    color: var(--text-dim);
+  }
+
+  .job-step__percent {
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  /* ---- The download bar ---- */
+
+  .job-progress__bar {
+    height: 6px;
+    overflow: hidden;
+    border-radius: var(--radius-full);
+    background: color-mix(in oklab, var(--starlight) 12%, transparent);
+  }
+
+  .job-progress__bar-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: var(--accent);
+    /* Polled once a second and it only ever moves forward, so the width eases between samples
+       rather than stepping. Collapses to nothing under prefers-reduced-motion with the token. */
+    transition: width var(--dur-slow) var(--ease-out);
+  }
+
+  /* ---- Done ---- */
+
+  .job-step--done .job-step__node {
+    border-color: var(--ok);
+    background: var(--ok);
+    color: var(--accent-contrast);
+  }
+
+  .job-step--done .job-step__label {
+    color: var(--text-muted);
+  }
+
+  .job-step--done + .job-step::before,
+  .job-step--active::before {
+    background: var(--ok);
+  }
+
+  /* ---- Active ---- */
+
+  .job-step--active .job-step__node {
+    border-color: var(--accent);
+    background: var(--surface);
+    color: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-quiet);
+  }
+
+  .job-step--active .job-step__label {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .job-step--active .job-step__node::after {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: var(--radius-full);
+    border: 2px solid var(--accent);
+    animation: node-ping 1.8s var(--ease-out) infinite;
+  }
+
+  @keyframes node-ping {
+    0% {
+      opacity: 0.8;
+      transform: scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(2.1);
+    }
+  }
+
+  /* The wire *out* of the active step: indeterminate travel, because the duration is unknown. */
+  .job-step--active + .job-step::before {
+    background: linear-gradient(
+        90deg,
+        transparent,
+        color-mix(in oklab, var(--accent) 85%, transparent),
+        transparent
+      )
+      no-repeat;
+    background-size: 45% 100%;
+    animation: wire-travel 1.5s var(--ease-in-out) infinite;
+  }
+
+  /* background-position is a main-thread repaint, but it is 2px tall and there is at most one
+     on screen. The alternative — a positioned child animating transform — needs an extra node
+     per step for a wire that is decoration. */
+  @keyframes wire-travel {
+    from {
+      background-position: -50% 0;
+    }
+    to {
+      background-position: 150% 0;
+    }
+  }
+
+  /* ---- Failed ---- */
+
+  .job-step--failed .job-step__node {
+    border-color: var(--danger);
+    background: var(--danger);
+    color: var(--accent-contrast);
+  }
+
+  .job-step--failed .job-step__label {
+    color: var(--danger);
+    font-weight: 600;
+  }
+
+  /* ---- Footer: elapsed time, id, failure reason ---- */
+
+  .job-progress__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border);
+    font-size: var(--text-sm);
+    color: var(--text-dim);
+  }
+
+  .job-progress__elapsed {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .job-progress__id {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+  }
+
+  .job-progress__reason {
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid color-mix(in oklab, var(--danger) 45%, transparent);
+    border-radius: var(--radius-sm);
+    background: var(--danger-quiet);
+    color: var(--text);
+    font-size: var(--text-sm);
+    /* ffmpeg and tracker output: long, unbroken, and not ours to reflow. */
+    overflow-wrap: anywhere;
+  }
+
+  /* Stack the track on a phone; three labels side by side truncate to nothing at 360px. */
+  @media (max-width: 30rem) {
+    .job-track {
+      grid-auto-flow: row;
+      gap: var(--space-3);
+    }
+
+    .job-step {
+      flex-direction: row;
+      gap: var(--space-3);
+      text-align: left;
+    }
+
+    .job-step:not(:first-child)::before {
+      top: auto;
+      right: auto;
+      left: 9px;
+      bottom: calc(100% + var(--space-1));
+      width: 2px;
+      height: var(--space-3);
+      margin-inline: 0;
+    }
+  }
+}

@@ -37,6 +37,30 @@ class RateLimitInterceptorTest {
     }
 
     @Test
+    @DisplayName("a safe method spends no tokens, so listing the library cannot throttle itself out")
+    void doesNotLimitSafeMethods() {
+        // POST and GET share /api/v1/videos and the registry matches on path alone. Without this,
+        // the player's own video list would spend the ingestion budget and start answering 429 after
+        // five page loads.
+        request.setMethod("GET");
+        RateLimitInterceptor interceptor =
+                new RateLimitInterceptor(key -> RateLimitDecision.denied(Duration.ofSeconds(42)));
+
+        assertThat(interceptor.preHandle(request, response, new Object())).isTrue();
+        assertThat(response.getHeader("X-RateLimit-Remaining")).isNull();
+    }
+
+    @Test
+    void stillLimitsUnsafeMethods() {
+        request.setMethod("POST");
+
+        assertThatThrownBy(
+                        () -> new RateLimitInterceptor(key -> RateLimitDecision.denied(Duration.ofSeconds(1)))
+                                .preHandle(request, response, new Object()))
+                .isInstanceOf(RateLimitExceededException.class);
+    }
+
+    @Test
     void bucketsByClientAddress() {
         request.setRemoteAddr("203.0.113.7");
         StringBuilder seen = new StringBuilder();

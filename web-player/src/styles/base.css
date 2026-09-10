@@ -1,0 +1,187 @@
+/*
+ * The page itself: the cosmos behind everything, the type scale, and the handful of
+ * primitives every page shares (shell, header, footer, skip link).
+ */
+@layer base {
+  body {
+    min-height: 100vh;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    font-size: var(--text-base);
+    line-height: var(--leading-normal);
+    /* The old rule was `text-align: center` on the body, which every block downstream then had
+       to undo — it is why .steps and .library were inline-block/grid hacks. Text goes left; the
+       shell does the centring. */
+    text-align: left;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /*
+   * The nebula. Four radial gradients on a fixed pseudo-element rather than on the body itself,
+   * so scrolling does not repaint them and the starfield canvas can sit between this and the
+   * content. Costs nothing to animate because nothing animates it.
+   */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-cosmos);
+    pointer-events: none;
+    background:
+      radial-gradient(
+        ellipse 80% 55% at 12% -10%,
+        color-mix(in oklab, var(--nebula) 26%, transparent),
+        transparent 60%
+      ),
+      radial-gradient(
+        ellipse 70% 50% at 88% 4%,
+        color-mix(in oklab, var(--stellar) 18%, transparent),
+        transparent 62%
+      ),
+      radial-gradient(
+        ellipse 90% 60% at 50% 106%,
+        color-mix(in oklab, var(--flare) 14%, transparent),
+        transparent 65%
+      ),
+      var(--bg);
+  }
+
+  /* The starfield, painted by ui/cosmos.js. Between the nebula and the content. */
+  .cosmos-canvas {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-cosmos);
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  /* Everything authored sits above both backdrop layers. */
+  .shell {
+    position: relative;
+    z-index: var(--z-base);
+    width: min(100% - 2 * var(--space-4), var(--content-width));
+    margin-inline: auto;
+    padding-block: var(--space-5) var(--space-8);
+  }
+
+  .shell--player {
+    width: min(100% - 2 * var(--space-4), var(--player-width));
+  }
+
+  /* ---- Type ---- */
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-tight);
+    text-wrap: balance;
+  }
+
+  h1 {
+    font-size: var(--text-3xl);
+  }
+
+  h2 {
+    font-size: var(--text-xl);
+  }
+
+  h3 {
+    font-size: var(--text-lg);
+  }
+
+  /* The small all-caps label above a section. */
+  .eyebrow {
+    font-family: var(--font-display);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  .muted {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+
+  a:where(:not([class])) {
+    color: var(--accent);
+    text-underline-offset: 0.2em;
+    text-decoration-thickness: 1px;
+  }
+
+  a:where(:not([class])):hover {
+    color: var(--accent-hover);
+  }
+
+  /* ---- Page furniture ---- */
+
+  .site-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
+  }
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+    font-weight: 600;
+    letter-spacing: var(--tracking-tight);
+    text-decoration: none;
+  }
+
+  .brand__mark {
+    width: 32px;
+    height: 32px;
+    flex: none;
+  }
+
+  .brand__sub {
+    color: var(--text-dim);
+    font-weight: 400;
+  }
+
+  .site-footer {
+    margin-top: var(--space-8);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+    align-items: center;
+    justify-content: space-between;
+    color: var(--text-dim);
+    font-size: var(--text-sm);
+  }
+
+  /* Visible only once tabbed to — the first stop on every page. */
+  .skip-link {
+    position: absolute;
+    left: var(--space-4);
+    top: var(--space-4);
+    z-index: var(--z-modal);
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-sm);
+    background: var(--accent);
+    color: var(--accent-contrast);
+    font-weight: 600;
+    text-decoration: none;
+    transform: translateY(-200%);
+    transition: transform var(--dur-base) var(--ease-out);
+  }
+
+  .skip-link:focus-visible {
+    transform: translateY(0);
+  }
+}

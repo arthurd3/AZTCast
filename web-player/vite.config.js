@@ -6,6 +6,10 @@ const API_TARGET = process.env.VITE_DEV_API_TARGET ?? 'http://localhost:8080';
 export default defineConfig({
   server: {
     port: 5173,
+    // Fail rather than drift. Without this Vite silently moves to 5174 when 5173 is
+    // taken, and the local profile's CORS allowlist only knows about 5173 — so a
+    // leftover dev server turns into a player that loads and then cannot reach the API.
+    strictPort: true,
     // Same-origin in development. This is what lets the API ship with an empty CORS
     // allowlist: the browser only ever talks to :5173, and Vite forwards /api to the
     // backend. Production does the same thing with nginx.
@@ -23,14 +27,27 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(import.meta.dirname, 'index.html'),
+        player: resolve(import.meta.dirname, 'player.html'),
         diagnostics: resolve(import.meta.dirname, 'diagnostics.html'),
+        providers: resolve(import.meta.dirname, 'providers.html'),
       },
       output: {
         // hls.js is ~575 kB and both pages use it. Give it its own named chunk so the
         // size is attributed to the library rather than to whichever app module the
         // bundler happened to name the shared chunk after, and so it caches across
         // deploys that only touch app code.
-        manualChunks: (id) => (id.includes('node_modules/hls.js') ? 'hls' : undefined),
+        // Leaflet and the world topology get the same treatment for the same reason: they are
+        // ~190 kB that only the provenance page loads, and attributing them to their own chunk
+        // keeps that visible in the build output instead of buried in a shared bundle.
+        manualChunks: (id) => {
+          if (id.includes('node_modules/hls.js')) {
+            return 'hls';
+          }
+          if (id.includes('node_modules/leaflet') || id.includes('node_modules/world-atlas')) {
+            return 'atlas';
+          }
+          return undefined;
+        },
       },
     },
   },

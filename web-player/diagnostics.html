@@ -3,37 +3,76 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0d16" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>AZTCast — Diagnóstico HLS</title>
   </head>
   <body>
-    <div class="container diagnostics">
-      <h1>🔧 Diagnóstico HLS</h1>
-      <p class="video-info">
-        Inspeciona um master playlist antes de tocá-lo: codecs anunciados, suporte do navegador e
-        MIME type do primeiro segmento.
-        <a href="/index.html">Voltar ao player</a>
-      </p>
+    <a class="skip-link" href="#main">Pular para o conteúdo</a>
 
-      <div class="controls">
-        <input
-          type="text"
-          id="videoId"
-          placeholder="Video ID (UUID)"
-          autocomplete="off"
-          spellcheck="false"
-        />
-        <button id="inspectBtn" type="button">Inspecionar</button>
-        <button id="playBtn" type="button">Reproduzir</button>
-        <button id="clearBtn" type="button">Limpar log</button>
-      </div>
+    <div class="shell">
+      <header class="site-header">
+        <a class="brand" href="/index.html">
+          <img class="brand__mark" src="/brand.svg" width="32" height="32" alt="" />
+          <span>AZTCast<span class="brand__sub"> · diagnóstico</span></span>
+        </a>
+      </header>
 
-      <div id="status" class="status hidden"></div>
+      <main id="main">
+        <p class="eyebrow">Instrumentação</p>
+        <h1>Console de missão</h1>
+        <p class="muted" style="max-width: 68ch; margin-top: var(--space-3)">
+          Inspeciona um master playlist antes de tocá-lo: o que ele anuncia, o que este navegador
+          aceita, e qual MIME type o servidor usa para o primeiro segmento. É a única página que
+          compara as três coisas.
+        </p>
 
-      <video id="video" controls crossorigin="anonymous"></video>
+        <div id="environment" class="console-head"></div>
 
-      <h2>Log</h2>
-      <pre id="log" class="log"></pre>
+        <div class="input-group">
+          <label class="visually-hidden" for="videoId">Video ID</label>
+          <input
+            type="text"
+            id="videoId"
+            class="input input--mono"
+            placeholder="Video ID (UUID)"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button id="inspectBtn" type="button" class="btn btn--primary">Inspecionar</button>
+          <button id="playBtn" type="button" class="btn btn--ghost">Reproduzir</button>
+        </div>
+
+        <div id="status" class="banner hidden" role="status" aria-live="polite"></div>
+
+        <div id="report" class="report"></div>
+
+        <div class="player-stage diagnostics-player">
+          <div class="player is-paused" id="player">
+            <!-- Kept for the same reason as on player.html: controls.js removes it. -->
+            <video id="video" controls playsinline crossorigin="anonymous"></video>
+          </div>
+        </div>
+
+        <div class="log-head">
+          <h2>Log</h2>
+          <div class="log-head__actions">
+            <label class="toggle">
+              <input type="checkbox" id="autoScroll" checked />
+              Rolagem automática
+            </label>
+            <button id="copyLogBtn" type="button" class="btn btn--ghost btn--sm">Copiar</button>
+            <button id="clearBtn" type="button" class="btn btn--ghost btn--sm">Limpar</button>
+          </div>
+        </div>
+        <div id="log" class="log" role="log" aria-label="Log de diagnóstico"></div>
+      </main>
+
+      <footer class="site-footer">
+        <span>AZTCast · streaming HLS adaptativo</span>
+        <a href="/providers.html">Fornecedores</a>
+        <a href="/index.html">Voltar à biblioteca</a>
+      </footer>
     </div>
 
     <script type="module" src="/src/diagnostics.js"></script>

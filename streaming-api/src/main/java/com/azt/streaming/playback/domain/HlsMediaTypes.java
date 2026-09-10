@@ -17,6 +17,7 @@ public final class HlsMediaTypes {
     private static final MediaType MP2T = MediaType.parseMediaType("video/mp2t");
     private static final MediaType ISO_SEGMENT = MediaType.parseMediaType("video/iso.segment");
     private static final MediaType MP4 = MediaType.parseMediaType("video/mp4");
+    private static final MediaType WEBVTT = MediaType.parseMediaType("text/vtt");
 
     private HlsMediaTypes() {}
 
@@ -33,6 +34,16 @@ public final class HlsMediaTypes {
         }
         if (name.endsWith(".mp4")) {
             return MP4;
+        }
+        // A subtitle track. Browsers refuse to parse a cue file served as anything but text/vtt,
+        // and the failure is silent: the track appears in the picker and shows nothing.
+        if (name.endsWith(".vtt")) {
+            return WEBVTT;
+        }
+        // The poster frame. Not an HLS asset, but it lives in the same directory and is served by
+        // the same mapping, and a browser will not paint an <img> it was handed as octet-stream.
+        if (name.endsWith(".jpg")) {
+            return MediaType.IMAGE_JPEG;
         }
         return MediaType.APPLICATION_OCTET_STREAM;
     }
