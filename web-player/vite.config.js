@@ -6,6 +6,10 @@ const API_TARGET = process.env.VITE_DEV_API_TARGET ?? 'http://localhost:8080';
 export default defineConfig({
   server: {
     port: 5173,
+    // Fail rather than drift. Without this Vite silently moves to 5174 when 5173 is
+    // taken, and the local profile's CORS allowlist only knows about 5173 — so a
+    // leftover dev server turns into a player that loads and then cannot reach the API.
+    strictPort: true,
     // Same-origin in development. This is what lets the API ship with an empty CORS
     // allowlist: the browser only ever talks to :5173, and Vite forwards /api to the
     // backend. Production does the same thing with nginx.
