@@ -78,8 +78,10 @@ The numbers that govern download speed are under
 `aztcast.streaming.torrent.network`, and the startup log prints every one of them:
 
 ```
-BitTorrent runtime: port=6891 encryption=PREFER_ENCRYPTED lsd=off pex=on bind=...
+Binding BitTorrent to 192.168.2.112 on enp4s0 — the source address of this host's default route
+BitTorrent runtime: port=6891 encryption=PREFER_ENCRYPTED lsd=off pex=on bind=/192.168.2.112
   peers=200/torrent (60 active, 600 global) pending=200 trackerBatch=200 ioQueue=2048
+  trackerTimeout=PT8S
 ```
 
 If a download is slow, read that line first — it distinguishes a tuned runtime from a
@@ -87,8 +89,21 @@ defaulted one. Then read the progress line, which carries the two facts a percen
 cannot give you:
 
 ```
-Progress 43.0% for magnet ... - 37 peers, 4.82 MiB/s
+Progress 43.0% for "Some.Release.1080p.WEB-DL" - 37 peers, 4.82 MiB/s
 ```
+
+The full magnet URI is one DEBUG line, at the start of the download, rather than on
+every tick — it is 1.5 kB of tracker query string and it used to bury everything else.
+
+**Check the bind address first.** It is the first line above, and it names the
+interface and the reason. `acceptor-address` is blank by default, which now means "the
+source address of this host's default route" rather than "whatever interface the
+library enumerates first" — that answer was a Docker bridge on any machine with
+containers on it, and a listening socket on a bridge address is one no peer on the
+internet can reach. If the line names something like `docker0` or `br-…`, a warning
+follows it and `acceptor-address` is the override. Pointing it at a tunnel is also how
+torrent traffic is confined to one interface; see
+[ADR-0015](decisions/0015-ip-masking-belongs-to-the-network.md).
 
 Few peers is a discovery problem: check the swarm is alive, that `6891/tcp` and
 `6891/udp` are published and forwarded (without an inbound port the client is
@@ -113,7 +128,24 @@ curl -s https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_b
 ```
 
 Paste the result over the list in `application.yml`. An empty list disables the
-mechanism; the magnet's own trackers are always used either way.
+mechanism.
+
+**Removing dead trackers.** The magnet's own trackers are used too, and a public magnet
+accumulates hosts that shut down years ago as it is copied between indexers. The library
+queries peer sources serially, so each dead host delays the live ones behind it — one
+real magnet carried seven, each costing a full timeout on every announce round.
+`aztcast.streaming.torrent.dead-trackers` strips them before the magnet is used, matched
+on host so one entry covers every port and path it appears with. They show up in the log
+as:
+
+```
+WARN bt.peer.ScheduledPeerSource : Peer collection finished with exception in peer source:
+  TrackerPeerSource {UdpTracker{trackerUrl=http://tracker.example:6969/announce}}
+java.util.concurrent.TimeoutException
+```
+
+`network.tracker-timeout` (8s) caps how long each one costs; the library leaves it unset,
+which means waiting for the socket to give up.
 
 ## Redis
 

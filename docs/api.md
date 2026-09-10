@@ -179,11 +179,16 @@ Progress of an ingestion.
 | `READY`       | `streamUrl` is present and the video can be played.       |
 | `FAILED`      | `failureReason` explains why.                             |
 
-`progressPercent` (0-100) is how much of the **torrent** has arrived. It is the download
-stage only: the swarm reports pieces, so the figure is measured, while ffmpeg reports
-nothing this pipeline reads — so there is no transcoding percentage rather than an
-invented one. It reaches 100 when the download finishes and stays there, which is why a
-job that failed while transcoding still says how far the download got.
+`progressPercent` (0-100) is how much of the **torrent** has arrived, and only that. It
+reaches 100 when the download finishes and stays there, which is why a job that failed
+while transcoding still says how far the download got.
+
+`transcodePercent` (0-100) is how much of the **encode** is done. It is **absent** until
+transcoding starts — the field is omitted rather than sent as 0, so "not started" and
+"0% done" are distinguishable without a third field. Both figures are measured: the swarm
+reports pieces, and ffmpeg reports `out_time_us` against the source duration. They are two
+fields rather than one reused because they measure different work; see
+[ADR-0024](decisions/0024-transcode-progress-is-its-own-figure.md).
 
 `404` if no job is known for that id — which is not the same as "no such video".
 Job state is in memory unless `aztcast.streaming.redis.enabled` is set, and expires

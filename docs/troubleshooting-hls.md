@@ -73,17 +73,73 @@ entirely. This is not a bug in the player.
 
 ## `Error selecting an encoder`
 
-The configured `aztcast.streaming.ffmpeg.video-codec` is not present in this
-ffmpeg build. Distributions that ship a patent-free ffmpeg — Fedora's default,
-among others — carry `libopenh264` instead of `libx264`.
+No H.264 encoder at all. `aztcast.streaming.ffmpeg.video-codec` defaults to `auto`,
+which picks the first entry of `video-codec-preference` this build carries, so this
+means the build carries none of them — or that the setting was pinned to an encoder
+that is not there.
 
 ```bash
-./scripts/check-prereqs.sh          # reports exactly this
-ffmpeg -hide_banner -encoders | grep 264
+./scripts/check-prereqs.sh          # names the encoder auto will pick, or says there is none
 ```
 
-The `local` profile already selects `libopenh264`. The Docker image installs an
-ffmpeg that has `libx264`, which is the default everywhere else.
+`GET /actuator/health` reports `videoEncoder` and goes `DOWN` when nothing resolves.
+See [ADR-0020](decisions/0020-ffmpeg-capabilities-are-probed-not-assumed.md).
 
-`GET /actuator/health` reports the configured encoder and goes `DOWN` with
-`"encoder not available in this ffmpeg build"` when it is missing.
+## `no decoder found for: eac3` (or hevc, dts, truehd)
+
+This one used to fail the ingestion after the whole torrent had been downloaded. It
+does not any more, and the reason is worth knowing because the outcome differs by
+codec.
+
+Distributions shipping a patent-free ffmpeg — Fedora's `ffmpeg-free`, among others —
+carry no E-AC-3 decoder, and E-AC-3 is the audio of essentially every AMZN WEB-DL.
+The decision is now made from the probe, before ffmpeg starts, and logged:
+
+```
+WARN  Audio for videoId …: this ffmpeg build has no eac3 decoder;
+      copying the eac3 track into the segments untouched
+```
+
+| Source audio | This build can decode it | Result |
+| --- | --- | --- |
+| AAC-LC, stereo | — | copied, `mp4a.40.2` |
+| anything | yes | re-encoded to AAC, `mp4a.40.2` |
+| `ac3` `eac3` `flac` `alac` `opus` | no | **copied through**, real CODECS (`ec-3`, `ac-3`, …) |
+| `dts` `truehd` | no | dropped; video-only ladder |
+
+A copied E-AC-3 track plays on Safari, iOS and tvOS and is silent on Chrome and
+Firefox. The master playlist says `ec-3`, so a player that cannot handle it knows
+before it fetches a segment. It also puts a 640 kbps floor under every rung, which
+makes the bottom of the ladder much less useful for adaptation.
+
+To decode it here instead — which gives 128 kbps AAC on every rung and removes the
+floor — install a full ffmpeg. `./scripts/check-prereqs.sh` names the package for
+this distribution:
+
+```bash
+./scripts/check-prereqs.sh
+# Missing: hevc eac3
+# To decode it here instead: RPM Fusion: sudo dnf install ffmpeg libavcodec-freeworld
+```
+
+`GET /actuator/health` lists `missingDecoders` and the configured
+`onUndecodableAudio` policy (`passthrough`, `drop` or `fail`). Nothing here takes the
+service DOWN: a missing decoder is degraded, not broken.
+
+## A rung is bigger than its configured bitrate
+
+`BANDWIDTH` and `AVERAGE-BANDWIDTH` in the master playlist are **measured** off the
+segments on disk, not derived from `renditions[].video-bitrate-kbps`. So a mismatch
+between the two is real, and usually means the encoder is not holding its target.
+
+`libopenh264` says so itself, on every run:
+
+```
+[libopenh264] Warning:bEnableFrameSkip = 0, bitrate can't be controlled for
+RC_QUALITY_MODE, RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+```
+
+It cannot hit a target bitrate without dropping frames, and dropping frames is worse.
+The manifest tells the truth about what it produced, which is what keeps a player from
+choosing a rung it cannot sustain. `libx264` holds its targets; `check-prereqs.sh` will
+say whether this host has it.

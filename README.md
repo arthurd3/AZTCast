@@ -35,9 +35,15 @@ held for the length of a transfer — see
 ./scripts/check-prereqs.sh
 ```
 
-It also checks that the *configured* encoder exists. Distributions shipping a
-patent-free ffmpeg (Fedora's default among them) carry `libopenh264` rather than
-`libx264`; the `local` profile already selects it.
+It also reports what this particular ffmpeg can do, which is not the same question
+as whether ffmpeg is installed: which H.264 encoder will be picked, which decoders
+are missing, and whether hardware acceleration actually opens. Nothing there fails
+the run — the service adapts to whatever it finds. `video-codec: auto` takes the
+first encoder the build has, so a distribution shipping a patent-free ffmpeg needs
+no profile of its own; a missing audio decoder means that track is copied through or
+dropped rather than failing the ingestion. What each answer costs you is spelled out
+in [docs/troubleshooting-hls.md](docs/troubleshooting-hls.md), and the script names
+the package that would change it.
 
 ## Running it
 
