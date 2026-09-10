@@ -27,8 +27,13 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * {@code POST}, and leaving it out meant Spring answered every submitted magnet with a bare
  * {@code 403 Invalid CORS request} — no problem document, because the rejection happens in
  * {@code DefaultCorsProcessor} long before any handler runs. Submitting a torrent from the player
- * was impossible under the profile the player is developed against. Nothing else mutates, so
- * nothing else is listed.
+ * was impossible under the profile the player is developed against.
+ *
+ * <p>{@code PUT} and {@code DELETE} joined them when videos became keepable. The failure was
+ * identical and just as invisible from the server side: the save button on a library card produced
+ * a bare 403 with nothing in the log, because the request never reached a controller. This list
+ * has to grow whenever a mutating endpoint is added, and there is nothing that checks it —
+ * {@code WebCorsConfigurationTest} exists to be that check.
  */
 @Configuration
 public class WebCorsConfiguration implements WebMvcConfigurer {
@@ -46,7 +51,7 @@ public class WebCorsConfiguration implements WebMvcConfigurer {
         }
         registry.addMapping("/api/**")
                 .allowedOrigins(allowedOrigins.toArray(String[]::new))
-                .allowedMethods("GET", "HEAD", "OPTIONS", "POST")
+                .allowedMethods("GET", "HEAD", "OPTIONS", "POST", "PUT", "DELETE")
                 .allowedHeaders("*")
                 .allowCredentials(false);
     }

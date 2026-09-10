@@ -3,6 +3,7 @@ package com.azt.streaming.shared.error;
 import com.azt.streaming.acquisition.domain.TorrentDownloadException;
 import com.azt.streaming.ingestion.domain.StreamJobNotFoundException;
 import com.azt.streaming.playback.domain.AssetNotFoundException;
+import com.azt.streaming.shared.storage.VideoNotFoundException;
 import com.azt.streaming.shared.ratelimit.RateLimitExceededException;
 import com.azt.streaming.transcoding.domain.TranscodingException;
 import jakarta.validation.ConstraintViolation;
@@ -52,6 +53,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(StreamJobNotFoundException.class)
     public ProblemDetail handleJobNotFound(StreamJobNotFoundException e) {
         return problem(HttpStatus.NOT_FOUND, ProblemTypes.JOB_NOT_FOUND, "Job not found", e.getMessage());
+    }
+
+    /**
+     * Separate from the job case, because they mean opposite things. A missing job with media
+     * present is normal; a missing video is the reaper having already been through.
+     */
+    @ExceptionHandler(VideoNotFoundException.class)
+    public ProblemDetail handleVideoNotFound(VideoNotFoundException e) {
+        return problem(HttpStatus.NOT_FOUND, ProblemTypes.VIDEO_NOT_FOUND, "Video not found", e.getMessage());
     }
 
     /**

@@ -32,6 +32,18 @@ public class VideoCatalog {
     /** Sidecar holding what the pipeline knew and the HLS output does not record. */
     static final String METADATA_FILE = "meta.json";
 
+    /**
+     * Sidecar marking a video as one to keep. Its <em>existence</em> is the flag; the contents are
+     * not read.
+     *
+     * <p>A file rather than a field in {@code meta.json} because the reaper is the only thing that
+     * has to consult it, and {@code Files.exists} answers that without parsing JSON on every
+     * directory of every hourly sweep. A file rather than a row in Redis for the same reason the
+     * catalogue reads the disk at all: Redis is optional and expires things, and a video whose
+     * "keep" flag quietly aged out would be deleted by the very mechanism it was meant to escape.
+     */
+    static final String KEEP_FILE = "keep.json";
+
     private static final String TITLE_FIELD = "title";
 
     /**
@@ -80,6 +92,36 @@ public class VideoCatalog {
         }
     }
 
+    /**
+     * Marks a video to be kept, or stops keeping it.
+     *
+     * <p>Idempotent both ways. Returns false only when the video has no directory to mark, which is
+     * how the controller tells a real id from one that has already been reaped.
+     */
+    public boolean setKept(String videoId, boolean kept) {
+        // resolveHlsAsset, not hlsDirectoryFor: the latter creates the directory on demand, so
+        // asking to keep an id that does not exist used to answer "no such video" and leave an
+        // empty directory behind — one per request, from an endpoint anyone can call.
+        Optional<Path> playlist = mediaStorage.resolveHlsAsset(videoId, MediaStorage.MASTER_PLAYLIST);
+        if (playlist.isEmpty()) {
+            return false;
+        }
+        Path marker = playlist.get().resolveSibling(KEEP_FILE);
+        try {
+            if (kept) {
+                // Written with a timestamp so the file says why it is there when someone finds it
+                // in a backup, even though nothing reads the contents back.
+                objectMapper.writeValue(marker.toFile(), Map.of("keptAt", Instant.now().toString()));
+            } else {
+                Files.deleteIfExists(marker);
+            }
+            return true;
+        } catch (IOException | RuntimeException e) {
+            log.warn("Could not set kept={} for {}", kept, videoId, e);
+            return false;
+        }
+    }
+
     private Optional<CatalogEntry> describe(Path directory) {
         String videoId = directory.getFileName().toString();
         try {
@@ -101,13 +143,16 @@ public class VideoCatalog {
 
             long sizeBytes = 0;
             boolean hasPoster = false;
+            boolean kept = false;
             for (Path file : files) {
                 sizeBytes += Files.size(file);
-                hasPoster |= file.getFileName().toString().equals(MediaStorage.POSTER);
+                String name = file.getFileName().toString();
+                hasPoster |= name.equals(MediaStorage.POSTER);
+                kept |= name.equals(KEEP_FILE);
             }
 
             return Optional.of(new CatalogEntry(
-                    videoId, titleOf(directory), readyAt, qualities, sizeBytes, hasPoster));
+                    videoId, titleOf(directory), readyAt, qualities, sizeBytes, hasPoster, kept));
         } catch (IOException e) {
             log.warn("Skipping {}: could not read its directory", videoId, e);
             return Optional.empty();

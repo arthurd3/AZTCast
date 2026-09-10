@@ -165,4 +165,61 @@ class VideoCatalogTest {
         Files.setLastModifiedTime(
                 directory.resolve(MediaStorage.MASTER_PLAYLIST), FileTime.from(when));
     }
+
+    @Test
+    @DisplayName("reports whether a video was marked to keep")
+    void reportsTheKeptFlag() throws IOException {
+        ready(VIDEO_ID);
+
+        assertThat(catalog.list()).singleElement().satisfies(entry -> assertThat(entry.kept()).isFalse());
+
+        assertThat(catalog.setKept(VIDEO_ID, true)).isTrue();
+        assertThat(catalog.list()).singleElement().satisfies(entry -> assertThat(entry.kept()).isTrue());
+
+        assertThat(catalog.setKept(VIDEO_ID, false)).isTrue();
+        assertThat(catalog.list()).singleElement().satisfies(entry -> assertThat(entry.kept()).isFalse());
+    }
+
+    @Test
+    @DisplayName("marking is idempotent in both directions")
+    void markingIsIdempotent() throws IOException {
+        // PUT twice is the same as PUT once, and un-keeping something never kept is a success:
+        // the flag is a state to arrive at, not an event to record.
+        ready(VIDEO_ID);
+
+        assertThat(catalog.setKept(VIDEO_ID, false)).isTrue();
+        assertThat(catalog.setKept(VIDEO_ID, true)).isTrue();
+        assertThat(catalog.setKept(VIDEO_ID, true)).isTrue();
+
+        assertThat(catalog.list()).singleElement().satisfies(entry -> assertThat(entry.kept()).isTrue());
+    }
+
+    @Test
+    @DisplayName("refuses to mark a video the reaper has already taken, and leaves no trace")
+    void refusesToMarkAVideoThatIsGone() {
+        String gone = "00000000-0000-0000-0000-000000000000";
+
+        assertThat(catalog.setKept(gone, true)).isFalse();
+
+        // The directory must not appear either. MediaStorage.hlsDirectoryFor creates on demand, so
+        // the obvious implementation answered "no such video" while creating one empty directory
+        // per call — from an endpoint that needs no authentication.
+        assertThat(hlsRoot.resolve(gone)).doesNotExist();
+    }
+
+    @Test
+    void refusesAnIdThatWouldEscapeTheHlsRoot() {
+        // The containment check lives in MediaStorage; this asserts the keep path goes through it
+        // rather than resolving a path of its own.
+        assertThat(catalog.setKept("../../etc", true)).isFalse();
+    }
+
+    @Test
+    void theKeepMarkerIsNotOfferedAsAQuality() throws IOException {
+        // It sits in the same directory as the variant playlists and must not be mistaken for one.
+        ready(VIDEO_ID);
+        catalog.setKept(VIDEO_ID, true);
+
+        assertThat(catalog.list()).singleElement().satisfies(entry -> assertThat(entry.qualities()).isEmpty());
+    }
 }

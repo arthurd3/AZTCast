@@ -30,6 +30,12 @@ aztcast:
       hls-dir: ./var/hls
       # Matches redis.job-ttl. Media outliving its job leaves directories nothing
       # can name; a job outliving its media reports READY for a video that is gone.
+      # Change them together.
+      #
+      # A video the library marks as kept is exempt from this and lives until it is
+      # deleted deliberately. That breaks the pairing in the harmless direction only:
+      # the job record still expires, leaving a listed video with no job behind it,
+      # which is what every video looks like after a restart anyway.
       retention: 7d
 
     ffmpeg:

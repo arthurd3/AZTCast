@@ -6,14 +6,17 @@ import com.azt.streaming.ingestion.web.dto.CreateStreamJobRequest;
 import com.azt.streaming.ingestion.web.dto.StreamJobResponse;
 import com.azt.streaming.ingestion.web.dto.VideoSummaryResponse;
 import com.azt.streaming.shared.storage.VideoCatalog;
+import com.azt.streaming.shared.storage.VideoNotFoundException;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.List;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -57,6 +60,35 @@ public class IngestionController {
         List<VideoSummaryResponse> videos =
                 videoCatalog.list().stream().map(VideoSummaryResponse::from).toList();
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(videos);
+    }
+
+    /**
+     * Keeps a video past the retention window, or stops keeping it.
+     *
+     * <p>A sub-resource with PUT and DELETE rather than a POST verb, because the thing being set is
+     * a flag that is either there or not: PUT twice is the same as PUT once, and DELETE on a video
+     * that was never kept is a success, not a 404. Only a video that has no media left is.
+     *
+     * <p>Not rate limited. {@code IngestionRateLimitConfiguration} registers the exact path
+     * {@code /api/v1/videos}, which does not match this one — and should not. The limit exists
+     * because starting an ingestion costs hours of CPU and gigabytes of disk; writing a marker file
+     * costs neither, and throttling the save button would be throttling nothing worth throttling.
+     */
+    @PutMapping("/{videoId}/keep")
+    public ResponseEntity<Void> keepVideo(@PathVariable String videoId) {
+        return setKept(videoId, true);
+    }
+
+    @DeleteMapping("/{videoId}/keep")
+    public ResponseEntity<Void> stopKeepingVideo(@PathVariable String videoId) {
+        return setKept(videoId, false);
+    }
+
+    private ResponseEntity<Void> setKept(String videoId, boolean kept) {
+        if (!videoCatalog.setKept(videoId, kept)) {
+            throw new VideoNotFoundException(videoId);
+        }
+        return ResponseEntity.noContent().build();
     }
 
     /**

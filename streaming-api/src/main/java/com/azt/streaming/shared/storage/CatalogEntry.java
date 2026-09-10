@@ -15,6 +15,7 @@ import java.util.List;
  * @param sizeBytes the ladder's footprint on disk
  * @param hasPoster whether a poster frame was extracted; false for anything encoded before posters
  *     existed, and for sources ffmpeg could not read a frame out of
+ * @param kept whether someone asked for this video to outlive the retention window
  */
 public record CatalogEntry(
         String videoId,
@@ -22,4 +23,5 @@ public record CatalogEntry(
         Instant readyAt,
         List<String> qualities,
         long sizeBytes,
-        boolean hasPoster) {}
+        boolean hasPoster,
+        boolean kept) {}

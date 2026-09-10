@@ -15,7 +15,9 @@ import java.util.List;
  * media that exists, so it carries no status and no failure reason.
  *
  * <p>{@code title} is omitted rather than sent as null when the sidecar is missing, so a client can
- * tell "no name recorded" from "named the empty string".
+ * tell "no name recorded" from "named the empty string". {@code kept} is a primitive and so is
+ * always present: the library renders a toggle from it, and an absent field would leave that
+ * control with no state to show.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record VideoSummaryResponse(
@@ -25,7 +27,8 @@ public record VideoSummaryResponse(
         String posterUrl,
         List<String> qualities,
         long sizeBytes,
-        Instant readyAt) {
+        Instant readyAt,
+        boolean kept) {
 
     public static VideoSummaryResponse from(CatalogEntry entry) {
         return new VideoSummaryResponse(
@@ -35,7 +38,8 @@ public record VideoSummaryResponse(
                 entry.hasPoster() ? posterUrlFor(entry.videoId()) : null,
                 entry.qualities(),
                 entry.sizeBytes(),
-                entry.readyAt());
+                entry.readyAt(),
+                entry.kept());
     }
 
     /**

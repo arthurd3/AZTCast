@@ -15,6 +15,7 @@ public final class ProblemTypes {
     public static final URI VALIDATION_FAILED = URI.create(BASE + "validation-failed");
     public static final URI ASSET_NOT_FOUND = URI.create(BASE + "asset-not-found");
     public static final URI JOB_NOT_FOUND = URI.create(BASE + "job-not-found");
+    public static final URI VIDEO_NOT_FOUND = URI.create(BASE + "video-not-found");
     public static final URI ACQUISITION_FAILED = URI.create(BASE + "acquisition-failed");
     public static final URI TRANSCODING_FAILED = URI.create(BASE + "transcoding-failed");
     public static final URI RATE_LIMITED = URI.create(BASE + "rate-limited");

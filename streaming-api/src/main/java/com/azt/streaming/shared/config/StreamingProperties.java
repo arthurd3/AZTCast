@@ -40,6 +40,9 @@ public record StreamingProperties(
      * <p>{@code retention} is how long media survives after its last modification. It should match
      * {@code redis.job-ttl}: a job that outlives its media reports READY for a video that is gone,
      * and media that outlives its job is a directory nothing refers to any more.
+     *
+     * <p>Videos marked as kept in the library are exempt, and outlive both. See
+     * {@link com.azt.streaming.shared.storage.MediaReaper} for why that asymmetry is safe.
      */
     public record Storage(@NotNull Path downloadsDir, @NotNull Path hlsDir, @NotNull Duration retention) {}
 

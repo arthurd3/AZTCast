@@ -2,8 +2,10 @@ package com.azt.streaming.ingestion.web;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -142,9 +144,10 @@ class IngestionControllerTest {
                                         NOW,
                                         List.of("1080p", "720p"),
                                         12_345L,
-                                        true),
+                                        true,
+                                        false),
                                 new CatalogEntry(
-                                        OLDER_ID, null, NOW.minusSeconds(60), List.of("720p"), 99L, false)));
+                                        OLDER_ID, null, NOW.minusSeconds(60), List.of("720p"), 99L, false, false)));
 
         mockMvc.perform(get("/api/v1/videos"))
                 .andExpect(status().isOk())
@@ -211,5 +214,44 @@ class IngestionControllerTest {
         return builder
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"magnetUrl\":\"" + MAGNET + "\"}");
+    }
+
+    @Test
+    @DisplayName("keeps a video, and stops keeping it")
+    void keepAndUnkeep() throws Exception {
+        given(videoCatalog.setKept(VIDEO_ID, true)).willReturn(true);
+        given(videoCatalog.setKept(VIDEO_ID, false)).willReturn(true);
+
+        mockMvc.perform(put("/api/v1/videos/" + VIDEO_ID + "/keep")).andExpect(status().isNoContent());
+        mockMvc.perform(delete("/api/v1/videos/" + VIDEO_ID + "/keep")).andExpect(status().isNoContent());
+    }
+
+    @Test
+    @DisplayName("keeping a video that no longer exists is a problem document, not a blank 404")
+    void keepingAReapedVideoIsANotFoundProblem() throws Exception {
+        given(videoCatalog.setKept(VIDEO_ID, true)).willReturn(false);
+
+        mockMvc.perform(put("/api/v1/videos/" + VIDEO_ID + "/keep"))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                // Distinct from job-not-found: a job expiring while its media lives is normal, and
+                // telling the two apart is the difference between "retry" and "it is gone".
+                .andExpect(jsonPath("$.type").value("https://aztcast.dev/problems/video-not-found"));
+    }
+
+    @Test
+    @DisplayName("the listing says whether each video is kept")
+    void theListingCarriesTheKeptFlag() throws Exception {
+        given(videoCatalog.list())
+                .willReturn(List.of(
+                        new CatalogEntry(VIDEO_ID, "Kept.mkv", NOW, List.of("720p"), 1L, true, true),
+                        new CatalogEntry(OLDER_ID, "Ordinary.mkv", NOW, List.of("720p"), 1L, true, false)));
+
+        // A primitive, so it is always present: the library renders a toggle from it, and an absent
+        // field would leave that control with no state to show.
+        mockMvc.perform(get("/api/v1/videos"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].kept").value(true))
+                .andExpect(jsonPath("$[1].kept").value(false));
     }
 }
