@@ -5,8 +5,10 @@ import com.azt.streaming.shared.config.StreamingProperties;
 import com.azt.streaming.shared.storage.MediaStorage;
 import com.azt.streaming.transcoding.domain.EncodedRendition;
 import com.azt.streaming.transcoding.domain.HlsRendition;
+import com.azt.streaming.transcoding.domain.LadderPlanner;
 import com.azt.streaming.transcoding.domain.MediaProbe;
 import com.azt.streaming.transcoding.domain.MediaTranscoder;
+import com.azt.streaming.transcoding.domain.PlannedRendition;
 import com.azt.streaming.transcoding.domain.ProbedVideo;
 import com.azt.streaming.transcoding.domain.TranscodingException;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -68,6 +70,10 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
         // to answer it. Tagged by outcome so a fast failure cannot be mistaken for a fast success.
         Timer.Sample sample = Timer.start(meterRegistry);
         String outcome = "failure";
+        // Tagged with what was actually built rather than what was configured, now that those are
+        // no longer the same number: a 480p source builds a shorter ladder than a 1080p one, and
+        // comparing their encode times without that tag compares two different jobs.
+        int rungs = 0;
 
         Path videoDirectory = mediaStorage.hlsDirectoryFor(videoId);
         try {
@@ -82,11 +88,17 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
                 log.warn("Source for videoId {} has no audio track; encoding video only", videoId);
             }
 
+            // The ladder that suits this source, not the one that was configured: never taller
+            // than what arrived, and with the top rung copied when the source is already H.264.
+            List<PlannedRendition> planned = LadderPlanner.plan(ladder, source);
+            rungs = planned.size();
+            log.info("Ladder for videoId {}: {}", videoId, describe(planned));
+
             // One invocation for the whole ladder. The previous version ran one per rung, which
             // decoded the source once per rung.
-            processRunner.run(commandBuilder.build(inputFile, videoDirectory, ladder, source.hasAudio()), timeout);
+            processRunner.run(commandBuilder.build(inputFile, videoDirectory, planned, source.hasAudio()), timeout);
 
-            List<EncodedRendition> encoded = measure(videoDirectory, source.hasAudio());
+            List<EncodedRendition> encoded = measure(videoDirectory, planned, source.hasAudio());
 
             // Before the master playlist, so a video is never listed without the thumbnail the
             // library expects to draw beside it.
@@ -105,7 +117,7 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
             sample.stop(Timer.builder("aztcast.transcode")
                     .description("Wall-clock time to encode a full ladder")
                     .tag("outcome", outcome)
-                    .tag("rungs", String.valueOf(ladder.size()))
+                    .tag("rungs", String.valueOf(rungs))
                     .register(meterRegistry));
         }
     }
@@ -142,10 +154,16 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
      *
      * <p>A probe failure degrades to the previously hardcoded string rather than failing the
      * ingestion: an approximate CODECS on a playable ladder beats no ladder at all.
+     *
+     * <p>Measuring matters more for a copied rung than for an encoded one, not less: nothing here
+     * chose its profile or level, so the source's own High@4.1 — which plenty of devices refuse —
+     * would otherwise be advertised as whatever the ladder assumed.
      */
-    private List<EncodedRendition> measure(Path videoDirectory, boolean sourceHadAudio) {
-        List<EncodedRendition> encoded = new ArrayList<>(ladder.size());
-        for (HlsRendition rendition : ladder) {
+    private List<EncodedRendition> measure(
+            Path videoDirectory, List<PlannedRendition> planned, boolean sourceHadAudio) {
+        List<EncodedRendition> encoded = new ArrayList<>(planned.size());
+        for (PlannedRendition rung : planned) {
+            HlsRendition rendition = rung.rendition();
             Path variantPlaylist = videoDirectory.resolve(rendition.playlistFileName());
             try {
                 ProbedVideo output = mediaProbe.probe(variantPlaylist);
@@ -162,5 +180,14 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
             }
         }
         return encoded;
+    }
+
+    /** The planned ladder as one log line, e.g. {@code 1080p(copy) 720p 480p}. */
+    private static String describe(List<PlannedRendition> planned) {
+        return planned.stream()
+                .map(rung -> rung.copyVideo()
+                        ? rung.rendition().name() + (rung.copyAudio() ? "(copy)" : "(copy, audio re-encoded)")
+                        : rung.rendition().name())
+                .collect(java.util.stream.Collectors.joining(" "));
     }
 }

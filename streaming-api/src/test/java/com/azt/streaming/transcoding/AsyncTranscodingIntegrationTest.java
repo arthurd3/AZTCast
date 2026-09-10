@@ -75,7 +75,7 @@ class AsyncTranscodingIntegrationTest {
 
     @Test
     void transcodingRunsOnTheNamedTranscodingExecutor() {
-        given(mediaProbe.probe(any())).willReturn(new ProbedVideo(true, true, "Main", 31));
+        given(mediaProbe.probe(any())).willReturn(ProbedVideo.measured(true, "Main", 31));
 
         AtomicReference<String> workerThread = new AtomicReference<>();
         willAnswer(

@@ -33,6 +33,11 @@ import org.junit.jupiter.api.io.TempDir;
  *       — with no error anywhere in the encode.
  *   <li>The master playlist advertised one hardcoded {@code avc1.4d001f} for every rung. It is only
  *       correct at 720p; the level follows resolution, so 240p really is 2.1.
+ *   <li>The top rung is now copied rather than encoded when the source is already H.264. Whether
+ *       that copy is real is not something a command-shape assertion can answer — {@code -c:v copy}
+ *       spelled correctly but wired through the filter graph fails, and spelled correctly and wired
+ *       correctly against a source that was quietly re-encoded upstream succeeds while losing a
+ *       generation of quality. The second test below compares the bitstreams.
  * </ul>
  *
  * <p>Skipped when ffmpeg is unavailable, so {@code mvn verify} stays green on a machine without it.
@@ -110,6 +115,61 @@ class RealFfmpegLadderTest {
                     .as("%s segments must land on segment boundaries", rendition.name())
                     .allMatch(d -> Math.abs(d - SEGMENT_DURATION.toSeconds()) < 0.2);
         }
+    }
+
+    @Test
+    @DisplayName("copies the top rung's bitstream instead of re-encoding it")
+    void copiesRatherThanReEncodesTheTopRung(@TempDir Path tmp) throws Exception {
+        // 720p in, so the planner's copy rung and the configured 720p rung land on the same name.
+        Path source = tmp.resolve("source.mp4");
+        generateClip(source);
+        Path outputDirectory = Files.createDirectory(tmp.resolve("hls"));
+
+        StreamingProperties properties = realProperties();
+        ProcessRunner processRunner = new ProcessRunner();
+        new FfmpegMediaTranscoder(
+                        fixedStorage(outputDirectory),
+                        new FfprobeMediaProbe(properties, processRunner),
+                        new FfmpegCommandBuilder(properties),
+                        processRunner,
+                        new MasterPlaylistWriter(),
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
+                        properties)
+                .transcodeToHls(source, "vid")
+                .join();
+
+        // The whole claim, in one assertion: the elementary stream that comes out of the top rung
+        // is byte-for-byte the one that went in. Anything that decoded and re-encoded — however
+        // high the bitrate — would differ here.
+        assertThat(videoBitstreamDigest(outputDirectory.resolve("720p.m3u8")))
+                .as("the top rung must be the source's own bitstream, not a re-encode of it")
+                .isEqualTo(videoBitstreamDigest(source));
+
+        // And the rung below really was encoded, so this is a mixed ladder and not a copy of
+        // everything: 240p cannot be a copy of a 720p source.
+        assertThat(videoBitstreamDigest(outputDirectory.resolve("240p.m3u8")))
+                .isNotEqualTo(videoBitstreamDigest(source));
+    }
+
+    /**
+     * MD5 of the raw H.264 elementary stream, with the container stripped off.
+     *
+     * <p>Comparing files would prove nothing: the source is an MP4 and the rung is a chain of fMP4
+     * segments, so their bytes differ however faithful the copy. Remuxing both to Annex B leaves
+     * only the encoded video, which is exactly what a copy must preserve and a re-encode cannot.
+     */
+    private static String videoBitstreamDigest(Path media) throws Exception {
+        Process process = new ProcessBuilder(List.of(
+                        "ffmpeg", "-hide_banner", "-loglevel", "error",
+                        "-i", media.toString(),
+                        "-map", "0:v:0", "-c:v", "copy", "-f", "h264", "-"))
+                .start();
+        byte[] bitstream = process.getInputStream().readAllBytes();
+        process.getErrorStream().readAllBytes();
+        process.waitFor();
+        assertThat(bitstream).as("no video bitstream read from %s", media).isNotEmpty();
+        return java.util.HexFormat.of()
+                .formatHex(java.security.MessageDigest.getInstance("MD5").digest(bitstream));
     }
 
     /** Asks ffprobe directly, independently of the production parsing code. */

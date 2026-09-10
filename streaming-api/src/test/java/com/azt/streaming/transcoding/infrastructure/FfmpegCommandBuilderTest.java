@@ -4,16 +4,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.azt.streaming.support.PropertiesFixture;
 import com.azt.streaming.transcoding.domain.HlsRendition;
+import com.azt.streaming.transcoding.domain.PlannedRendition;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class FfmpegCommandBuilderTest {
 
     private static final HlsRendition RENDITION_720P = new HlsRendition("720p", 1280, 720, 3000, 128);
     private static final HlsRendition RENDITION_240P = new HlsRendition("240p", 426, 240, 500, 64);
-    private static final List<HlsRendition> LADDER = List.of(RENDITION_720P, RENDITION_240P);
+    private static final List<PlannedRendition> LADDER =
+            List.of(PlannedRendition.encoded(RENDITION_720P), PlannedRendition.encoded(RENDITION_240P));
 
     private static final Path OUT = Path.of("/out/vid");
 
@@ -80,7 +83,7 @@ class FfmpegCommandBuilderTest {
         // By time, not by -g frame count: the source is an arbitrary torrent and may be variable
         // frame rate, where a frame count is the wrong unit. Segments must start on a keyframe or
         // the player cannot switch rungs cleanly.
-        assertThat(valueOf(command(), "-force_key_frames")).isEqualTo("expr:gte(t,n_forced*4)");
+        assertThat(valueOf(command(), "-force_key_frames:v:0")).isEqualTo("expr:gte(t,n_forced*4)");
         assertThat(valueOf(command(), "-hls_time")).isEqualTo("4");
         assertThat(valueOf(command(), "-hls_flags")).isEqualTo("independent_segments");
         assertThat(valueOf(command(), "-hls_segment_type")).isEqualTo("fmp4");
@@ -94,7 +97,7 @@ class FfmpegCommandBuilderTest {
 
         assertThat(valueOf(command, "-hls_time")).isEqualTo("10");
         // The keyframe interval has to follow the segment duration, or boundaries stop aligning.
-        assertThat(valueOf(command, "-force_key_frames")).isEqualTo("expr:gte(t,n_forced*10)");
+        assertThat(valueOf(command, "-force_key_frames:v:0")).isEqualTo("expr:gte(t,n_forced*10)");
     }
 
     @Test
@@ -103,7 +106,7 @@ class FfmpegCommandBuilderTest {
         // a file we chose. The stream map must drop its audio references in step.
         List<String> silent = builder.build(Path.of("in.mkv"), OUT, LADDER, false);
 
-        assertThat(silent).doesNotContain("-c:a:0", "-b:a:0", "-ac", "-ar");
+        assertThat(silent).doesNotContain("-c:a:0", "-b:a:0", "-ac:a:0", "-ar:a:0");
         assertThat(valueOf(silent, "-var_stream_map")).isEqualTo("v:0,name:720p v:1,name:240p");
     }
 
@@ -138,5 +141,69 @@ class FfmpegCommandBuilderTest {
         int index = command.indexOf(flag);
         assertThat(index).as("flag %s present", flag).isNotNegative();
         return command.get(index + 1);
+    }
+
+    private static final HlsRendition RENDITION_1080P = new HlsRendition("1080p", 1920, 1080, 6000, 0);
+
+    private List<String> copyLadder() {
+        return builder.build(
+                Path.of("/in/movie.mkv"),
+                OUT,
+                List.of(
+                        new PlannedRendition(RENDITION_1080P, true, true),
+                        PlannedRendition.encoded(RENDITION_720P),
+                        PlannedRendition.encoded(RENDITION_240P)),
+                true);
+    }
+
+    @Test
+    @DisplayName("maps a copied rung off the input, not out of the filter graph")
+    void copiedRungBypassesTheFilterGraph() {
+        // A copied stream is never decoded, so there is no frame for a scaler to receive. Routing
+        // it through the graph is not a quality choice, it is a command ffmpeg refuses.
+        List<String> command = copyLadder();
+
+        assertThat(valueOf(command, "-c:v:0")).isEqualTo("copy");
+        assertThat(command).containsSequence("-map", "0:v:0");
+        // split counts the encoded rungs only; a branch nothing consumes is an error.
+        assertThat(valueOf(command, "-filter_complex"))
+                .isEqualTo("[0:v]split=2[v0][v1];[v0]scale=w=1280:h=720[v0out];[v1]scale=w=426:h=240[v1out]");
+    }
+
+    @Test
+    @DisplayName("gives a copied rung no encoder settings it could not obey")
+    void copiedRungCarriesNoEncoderSettings() {
+        List<String> command = copyLadder();
+
+        // -force_key_frames, -b:v, -ac and -ar are all instructions to an encoder or a resampler.
+        // Aimed at a copied stream they are at best ignored and at worst fatal, which is why they
+        // became per-stream rather than staying global.
+        assertThat(command).doesNotContain("-force_key_frames:v:0", "-b:v:0", "-ac:a:0", "-ar:a:0");
+        assertThat(valueOf(command, "-c:a:0")).isEqualTo("copy");
+        // The encoded rungs still get theirs.
+        assertThat(valueOf(command, "-force_key_frames:v:1")).isEqualTo("expr:gte(t,n_forced*4)");
+        assertThat(valueOf(command, "-c:v:1")).isEqualTo("libx264");
+    }
+
+    @Test
+    @DisplayName("omits the filter graph entirely when every rung is copied")
+    void copyOnlyLadderHasNoFilterGraph() {
+        // Reachable: an H.264 source shorter than the shortest configured rung needs one copied
+        // rung and no encoder at all. An empty filter graph is a parse error.
+        List<String> command = builder.build(
+                Path.of("in.mkv"), OUT, List.of(new PlannedRendition(RENDITION_1080P, true, true)), true);
+
+        assertThat(command).doesNotContain("-filter_complex");
+        assertThat(valueOf(command, "-var_stream_map")).isEqualTo("v:0,a:0,name:1080p");
+    }
+
+    @Test
+    void reEncodesAudioBesideCopiedVideoWhenAsked() {
+        List<String> command = builder.build(
+                Path.of("in.mkv"), OUT, List.of(new PlannedRendition(RENDITION_720P, true, false)), true);
+
+        assertThat(valueOf(command, "-c:v:0")).isEqualTo("copy");
+        assertThat(valueOf(command, "-c:a:0")).isEqualTo("aac");
+        assertThat(valueOf(command, "-ar:a:0")).isEqualTo("48000");
     }
 }

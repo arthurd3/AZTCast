@@ -2,6 +2,7 @@ package com.azt.streaming.transcoding.infrastructure;
 
 import com.azt.streaming.shared.config.StreamingProperties;
 import com.azt.streaming.transcoding.domain.HlsRendition;
+import com.azt.streaming.transcoding.domain.PlannedRendition;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -57,49 +58,79 @@ public class FfmpegCommandBuilder {
     /**
      * @param inputFile source media
      * @param outputDirectory folder that will hold every playlist, init segment and segment
-     * @param ladder the rungs to encode, in the order they should appear
+     * @param ladder the rungs to produce, in the order they should appear, each already marked as
+     *     copied or encoded by {@link com.azt.streaming.transcoding.domain.LadderPlanner}
      * @param includeAudio whether the source has an audio stream to map; a torrent may not, and
      *     {@code -map a:0} against a file with no audio fails the whole encode
      */
     public List<String> build(
-            Path inputFile, Path outputDirectory, List<HlsRendition> ladder, boolean includeAudio) {
+            Path inputFile, Path outputDirectory, List<PlannedRendition> ladder, boolean includeAudio) {
         List<String> command = new ArrayList<>();
         command.add(binary);
         command.add("-i");
         command.add(inputFile.toString());
 
-        command.add("-filter_complex");
-        command.add(filterGraph(ladder));
+        List<PlannedRendition> encodedRungs =
+                ladder.stream().filter(rung -> !rung.copyVideo()).toList();
 
+        // Omitted entirely when every rung is copied. An empty filter graph is a parse error, and a
+        // ladder with nothing to scale is reachable: a source shorter than the shortest configured
+        // rung, already in H.264, needs one copied rung and no encoder at all.
+        if (!encodedRungs.isEmpty()) {
+            command.add("-filter_complex");
+            command.add(filterGraph(encodedRungs));
+        }
+
+        int encodedIndex = 0;
         for (int i = 0; i < ladder.size(); i++) {
-            HlsRendition rendition = ladder.get(i);
+            PlannedRendition planned = ladder.get(i);
+            HlsRendition rendition = planned.rendition();
+
+            if (planned.copyVideo()) {
+                // Straight off the input, not out of the filter graph: a copied stream is never
+                // decoded, so there is no frame for a filter to receive.
+                command.addAll(List.of("-map", "0:v:0", "-c:v:" + i, "copy"));
+                continue;
+            }
+
             command.addAll(List.of(
-                    "-map", "[v%dout]".formatted(i),
+                    "-map", "[v%dout]".formatted(encodedIndex),
                     "-c:v:" + i, videoCodec,
                     // Per stream, and not optional. Without it libopenh264 drops to Constrained
                     // Baseline without failing, and the CODECS the master advertises becomes false.
                     "-profile:v:" + i, "main",
                     "-b:v:" + i, kbps(rendition.videoBitrateKbps()),
                     "-maxrate:v:" + i, kbps(rendition.maxrateKbps()),
-                    "-bufsize:v:" + i, kbps(rendition.bufsizeKbps())));
+                    "-bufsize:v:" + i, kbps(rendition.bufsizeKbps()),
+                    // Keyframes by time, not by -g frame count. The usual advice is
+                    // `-g N -keyint_min N -sc_threshold 0`, which assumes a known frame rate — but
+                    // the source here is an arbitrary torrent and may well be variable frame rate,
+                    // where a frame count is the wrong unit entirely. Forcing on the segment
+                    // boundary makes every segment start on a keyframe at any frame rate.
+                    //
+                    // Per stream rather than global now, because a global one would also be aimed
+                    // at the copied rung, where there is no encoder to instruct.
+                    "-force_key_frames:v:" + i, keyFrameExpression()));
+            encodedIndex++;
         }
 
         if (includeAudio) {
             for (int i = 0; i < ladder.size(); i++) {
+                PlannedRendition planned = ladder.get(i);
+                command.addAll(List.of("-map", "a:0"));
+                if (planned.copyAudio()) {
+                    command.addAll(List.of("-c:a:" + i, "copy"));
+                    continue;
+                }
                 command.addAll(List.of(
-                        "-map", "a:0",
                         "-c:a:" + i, "aac",
-                        "-b:a:" + i, kbps(ladder.get(i).audioBitrateKbps())));
+                        "-b:a:" + i, kbps(planned.rendition().audioBitrateKbps()),
+                        // Per stream for the same reason as the keyframes: -ac and -ar are
+                        // instructions to a resampler, and a copied track has none.
+                        "-ac:a:" + i, "2",
+                        "-ar:a:" + i, "48000"));
             }
-            command.addAll(List.of("-ac", "2", "-ar", "48000"));
         }
-
-        // Keyframes by time, not by -g frame count. The usual advice is
-        // `-g N -keyint_min N -sc_threshold 0`, which assumes a known frame rate — but the source
-        // here is an arbitrary torrent and may well be variable frame rate, where a frame count is
-        // the wrong unit entirely. Forcing on the segment boundary makes every segment start on a
-        // keyframe at any frame rate, which is what lets a player switch rungs without a gap.
-        command.addAll(List.of("-force_key_frames", "expr:gte(t,n_forced*%d)".formatted(segmentDuration.toSeconds())));
 
         command.addAll(List.of(
                 "-f", "hls",
@@ -107,6 +138,9 @@ public class FfmpegCommandBuilder {
                 "-hls_playlist_type", "vod",
                 // Each segment decodable without its predecessors — the precondition for the player
                 // switching rungs mid-stream, and it emits EXT-X-INDEPENDENT-SEGMENTS to say so.
+                // Still true of a copied rung: its segments break on the keyframes the source
+                // already had. What is no longer guaranteed is that they break at the *same* points
+                // as the encoded rungs, because nothing put those keyframes where we would choose.
                 "-hls_flags", "independent_segments",
                 "-hls_segment_type", "fmp4",
                 "-hls_fmp4_init_filename", "%v_init.mp4",
@@ -115,6 +149,10 @@ public class FfmpegCommandBuilder {
                 outputDirectory.resolve("%v.m3u8").toString()));
 
         return List.copyOf(command);
+    }
+
+    private String keyFrameExpression() {
+        return "expr:gte(t,n_forced*%d)".formatted(segmentDuration.toSeconds());
     }
 
     /**
@@ -153,24 +191,33 @@ public class FfmpegCommandBuilder {
         return List.copyOf(command);
     }
 
-    /** {@code [0:v]split=N[v0]…;[v0]scale=w=W:h=H[v0out];…} — one decode, N scalers. */
-    private static String filterGraph(List<HlsRendition> ladder) {
-        String split = IntStream.range(0, ladder.size())
+    /**
+     * {@code [0:v]split=N[v0]…;[v0]scale=w=W:h=H[v0out];…} — one decode, N scalers.
+     *
+     * <p>N counts only the rungs being encoded. A copied rung never reaches the graph, so giving it
+     * a branch would leave an output nothing consumes, which ffmpeg rejects.
+     */
+    private static String filterGraph(List<PlannedRendition> encodedRungs) {
+        String split = IntStream.range(0, encodedRungs.size())
                 .mapToObj("[v%d]"::formatted)
                 .collect(Collectors.joining());
-        String scalers = IntStream.range(0, ladder.size())
+        String scalers = IntStream.range(0, encodedRungs.size())
                 .mapToObj(i -> "[v%d]scale=w=%d:h=%d[v%dout]"
-                        .formatted(i, ladder.get(i).width(), ladder.get(i).height(), i))
+                        .formatted(
+                                i,
+                                encodedRungs.get(i).rendition().width(),
+                                encodedRungs.get(i).rendition().height(),
+                                i))
                 .collect(Collectors.joining(";"));
-        return "[0:v]split=%d%s;%s".formatted(ladder.size(), split, scalers);
+        return "[0:v]split=%d%s;%s".formatted(encodedRungs.size(), split, scalers);
     }
 
     /** {@code v:0,a:0,name:1080p v:1,a:1,name:720p …} — the {@code name:} is what keeps files flat. */
-    private static String variantStreamMap(List<HlsRendition> ladder, boolean includeAudio) {
+    private static String variantStreamMap(List<PlannedRendition> ladder, boolean includeAudio) {
         return IntStream.range(0, ladder.size())
                 .mapToObj(i -> includeAudio
-                        ? "v:%d,a:%d,name:%s".formatted(i, i, ladder.get(i).name())
-                        : "v:%d,name:%s".formatted(i, ladder.get(i).name()))
+                        ? "v:%d,a:%d,name:%s".formatted(i, i, ladder.get(i).rendition().name())
+                        : "v:%d,name:%s".formatted(i, ladder.get(i).rendition().name()))
                 .collect(Collectors.joining(" "));
     }
 

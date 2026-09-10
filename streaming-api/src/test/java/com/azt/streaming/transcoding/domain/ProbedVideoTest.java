@@ -24,7 +24,7 @@ class ProbedVideoTest {
     })
     @DisplayName("builds the RFC 6381 string from what the encoder actually produced")
     void mapsProfileAndLevelToTheCodecString(String profile, int level, String expectedVideo) {
-        ProbedVideo probed = new ProbedVideo(true, true, profile, level);
+        ProbedVideo probed = ProbedVideo.measured(true, profile, level);
 
         assertThat(probed.codecs()).isEqualTo(expectedVideo + ",mp4a.40.2");
     }
@@ -33,7 +33,7 @@ class ProbedVideoTest {
     void omitsTheAudioCodecWhenThereIsNoAudioTrack() {
         // Advertising mp4a on a rung with no audio is the same class of error as the wrong level:
         // the player provisions a decoder for a stream that never arrives.
-        ProbedVideo silent = new ProbedVideo(true, false, "Main", 31);
+        ProbedVideo silent = ProbedVideo.measured(false, "Main", 31);
 
         assertThat(silent.codecs()).isEqualTo("avc1.4d001f");
     }
@@ -42,8 +42,8 @@ class ProbedVideoTest {
     void fallsBackToMainForAProfileItDoesNotRecognise() {
         // An unknown profile should still yield a syntactically valid, plausible string rather than
         // a malformed attribute that a player cannot parse at all.
-        assertThat(new ProbedVideo(true, true, "Some Future Profile", 31).codecs())
+        assertThat(ProbedVideo.measured(true, "Some Future Profile", 31).codecs())
                 .isEqualTo("avc1.4d001f,mp4a.40.2");
-        assertThat(new ProbedVideo(true, true, null, 31).codecs()).isEqualTo("avc1.4d001f,mp4a.40.2");
+        assertThat(ProbedVideo.measured(true, null, 31).codecs()).isEqualTo("avc1.4d001f,mp4a.40.2");
     }
 }
