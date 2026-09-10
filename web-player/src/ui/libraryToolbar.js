@@ -14,8 +14,8 @@ const SORTS = [
  * Search and sort above the library grid.
  *
  * Both act on the array already in memory — see the note in videoLibrary.js about why there is
- * no request per keystroke. The toolbar therefore owns no data, only the two controls and the
- * result count.
+ * no request per keystroke. The toolbar therefore owns no data, only the two controls, the result
+ * count and the disk reading beside it.
  */
 export function createLibraryToolbar(container, { onChange }) {
   const search = document.createElement('div');
@@ -54,7 +54,18 @@ export function createLibraryToolbar(container, { onChange }) {
   kept.setAttribute('aria-pressed', 'false');
   kept.append(icon('bookmark', 'btn__icon'), document.createTextNode('Salvos'));
 
-  container.replaceChildren(search, sort, kept, count);
+  /*
+   * How much room is left, next to how many videos there are. It earns the space because nothing
+   * deletes itself: the disk is the only limit the library has now, and a number that only appears
+   * once an ingestion is refused would arrive after the decision it was meant to inform.
+   *
+   * Quiet, and absent entirely until it is known — an empty element is better than a confident 0 GB
+   * on a host whose filesystem could not be read.
+   */
+  const space = document.createElement('p');
+  space.className = 'library-toolbar__space';
+
+  container.replaceChildren(search, sort, kept, count, space);
 
   let timer = null;
   let keptOnly = false;
@@ -98,5 +109,35 @@ export function createLibraryToolbar(container, { onChange }) {
           ? `${total} ${total === 1 ? 'vídeo' : 'vídeos'}`
           : `${shown} de ${total} vídeos`;
     },
+
+    /**
+     * Shows what the library occupies and what is left on the volume.
+     *
+     * Says nothing at all when the volume could not be read, rather than guessing. Warns when the
+     * free space is within a whisker of the floor, because that is the point at which the next
+     * magnet is going to be refused and the person pasting it deserves to know first.
+     */
+    setSpace(storage) {
+      if (!storage || storage.usableBytes === null || storage.usableBytes === undefined) {
+        space.textContent = '';
+        space.classList.remove('library-toolbar__space--low');
+        return;
+      }
+      const low = storage.minFreeBytes > 0 && storage.usableBytes < storage.minFreeBytes * 2;
+      space.classList.toggle('library-toolbar__space--low', low);
+      space.textContent = `${bytes(storage.mediaBytes)} em vídeos · ${bytes(storage.usableBytes)} livres`;
+    },
   };
+}
+
+/** Bytes as the nearest sensible unit. Binary steps, decimal comma, as the cards already use. */
+function bytes(value) {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = value;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  return `${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(size)} ${units[unit]}`;
 }

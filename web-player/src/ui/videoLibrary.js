@@ -1,4 +1,4 @@
-import { listVideos, posterUrl, setVideoKept } from '../api/streamClient.js';
+import { deleteVideo, listVideos, posterUrl, setVideoKept } from '../api/streamClient.js';
 import { fraction } from '../player/progressStore.js';
 import { icon } from './icons.js';
 
@@ -23,8 +23,10 @@ const SKELETON_COUNT = 8;
  * stranger chose. The same reasoning is written down in jobProgress.js and videoInfo.js.
  *
  * Filtering and sorting happen here, over the array the listing already returned. There is no
- * query parameter to send: `GET /api/v1/videos` returns everything on disk and the retention
- * window keeps that small, so a round trip per keystroke would buy nothing.
+ * query parameter to send: `GET /api/v1/videos` returns everything on disk, and a round trip per
+ * keystroke would buy nothing over filtering an array that is already in the page. Nothing expires
+ * out of that listing any more, so it grows with the library — if it ever gets big enough for this
+ * to feel slow, the fix is a query parameter, not a shorter library.
  */
 export function createVideoLibrary(
   container,
@@ -107,7 +109,7 @@ export function createVideoLibrary(
       if (view.keptOnly && !view.query.trim()) {
         note(
           'Nenhum vídeo salvo',
-          'Vídeos salvos ficam guardados além da janela de retenção. Use o marcador no canto de um card para salvar.',
+          'Salvar um vídeo pede confirmação antes de excluí-lo. Use o marcador no canto de um card.',
         );
       } else {
         note(
@@ -154,12 +156,12 @@ export function createVideoLibrary(
     // something to rely on. The shell is the grid item; the card and the keep toggle are siblings.
     const shell = document.createElement('div');
     shell.className = 'video-card-shell';
-    shell.append(button, keepToggle(video));
+    shell.append(button, keepToggle(video), deleteToggle(video));
     return shell;
   }
 
   /**
-   * The save toggle, which decides whether the reaper may take this video.
+   * The save toggle, which decides whether deleting this video stops to ask first.
    *
    * Optimistic: the marker is a file write on the server and the failure mode is a stale icon, not
    * lost media, so the button flips immediately and rolls back if the request fails. Waiting for a
@@ -175,7 +177,7 @@ export function createVideoLibrary(
       toggle.setAttribute('aria-pressed', kept ? 'true' : 'false');
       const label = kept ? 'Remover dos salvos' : 'Salvar vídeo';
       toggle.setAttribute('aria-label', label);
-      toggle.title = kept ? 'Salvo — não será removido automaticamente' : 'Salvar';
+      toggle.title = kept ? 'Salvo — a exclusão pede confirmação' : 'Salvar';
       toggle.replaceChildren(icon(kept ? 'bookmarkOn' : 'bookmark', 'video-card__keep-icon'));
     }
 
@@ -198,6 +200,72 @@ export function createVideoLibrary(
         toggle.title = error.message;
       } finally {
         toggle.disabled = false;
+      }
+    });
+    return toggle;
+  }
+
+  /**
+   * The delete control: two clicks, never one.
+   *
+   * Deliberately not `confirm()`. A modal blocks the whole page to ask about one card, and the
+   * question it asks is somebody else's wording in somebody else's box — the same reason nothing
+   * else in this file reaches for innerHTML. Arming the button in place puts the question where
+   * the answer is, and clicking anything else disarms it.
+   *
+   * Not optimistic, unlike the save toggle beside it. That one risks a stale icon; this one risks
+   * a card for a video that is gone, or worse, a card removed for a video that is still there. It
+   * waits for the 204.
+   *
+   * A saved video costs a third click. The 409 comes back from the API rather than being predicted
+   * here, so the marker is enforced where it lives even if this page is out of date about it.
+   */
+  function deleteToggle(video) {
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'video-card__delete';
+    let armed = false;
+
+    function paint() {
+      toggle.classList.toggle('video-card__delete--armed', armed);
+      const label = armed ? `Confirmar exclusão de ${label(video)}` : `Excluir ${label(video)}`;
+      toggle.setAttribute('aria-label', label);
+      toggle.title = armed ? 'Clique de novo para excluir' : 'Excluir';
+      toggle.replaceChildren(icon(armed ? 'check' : 'trash', 'video-card__delete-icon'));
+    }
+
+    function disarm() {
+      if (!armed) return;
+      armed = false;
+      paint();
+    }
+
+    paint();
+    // Anywhere else in the document disarms it, so an armed button cannot be left lying around for
+    // a later, unrelated click to land on.
+    document.addEventListener('click', disarm);
+
+    toggle.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      if (!armed) {
+        armed = true;
+        paint();
+        return;
+      }
+      toggle.disabled = true;
+      try {
+        await deleteVideo(video.videoId, { force: video.kept });
+        document.removeEventListener('click', disarm);
+        all = all.filter((other) => other.videoId !== video.videoId);
+        const shown = render();
+        onLoad?.({ total: all.length, shown, failed: false });
+      } catch (error) {
+        toggle.disabled = false;
+        disarm();
+        // Not note(): that replaces the whole grid, so one failed delete would blank the library
+        // the viewer is looking at. Same reasoning as the save toggle above.
+        onError?.(error.message);
+        toggle.title = error.message;
       }
     });
     return toggle;

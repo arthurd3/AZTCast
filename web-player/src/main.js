@@ -1,6 +1,7 @@
 import './styles/main.css';
 import {
   createStreamJob,
+  getStorage,
   getStreamJob,
   listActiveJobs,
   playerPageUrl,
@@ -49,6 +50,12 @@ const library = createVideoLibrary(document.getElementById('library'), {
   },
   onLoad: ({ total: loaded, shown, failed }) => {
     total = loaded;
+    // Not awaited, and deliberately after the grid is already on screen: the disk reading is a
+    // second request, and holding the library back for it would trade the thing people came for
+    // against a footnote.
+    if (!failed) {
+      refreshSpace();
+    }
     // Nothing to sort through with one video and nothing to search when the load failed.
     if (failed || loaded < 2) {
       toolbar.hide();
@@ -61,6 +68,20 @@ const library = createVideoLibrary(document.getElementById('library'), {
 
 /** How many videos the API returned, before the toolbar narrows them. */
 let total = 0;
+
+/**
+ * Updates the disk reading in the toolbar, and stays quiet if it cannot.
+ *
+ * Swallows its failure on purpose. This is a footnote about free space; a library that loaded
+ * perfectly well should not show an error banner because the number beside the count is missing.
+ */
+async function refreshSpace() {
+  try {
+    toolbar.setSpace(await getStorage());
+  } catch {
+    toolbar.setSpace(null);
+  }
+}
 
 /** The poll in flight, so starting a second ingestion does not leave the first one running. */
 let activePoll = null;

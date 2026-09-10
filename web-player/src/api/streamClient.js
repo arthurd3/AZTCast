@@ -15,7 +15,7 @@ export function playerPageUrl(videoId) {
  *
  * There is no single-video endpoint to call: `GET /api/v1/videos/{id}` reports an ingestion, and
  * 404s for media whose job record is gone — which is most of it. The listing is the only thing that
- * answers for a video that merely exists, and the retention window keeps it small.
+ * answers for a video that merely exists.
  */
 export async function findVideo(videoId) {
   const videos = await listVideos();
@@ -98,10 +98,11 @@ export async function listVideos() {
 }
 
 /**
- * Marks a video to be kept past the retention window, or stops keeping it.
+ * Marks a video as one to keep, or stops keeping it.
  *
- * Media is deleted automatically after the retention window, which is what stops a long-running
- * instance filling its disk. This is the opt-out: a kept video lives until someone says otherwise.
+ * Nothing deletes a video on a schedule, so this is no longer an exemption from anything. What it
+ * buys is a stop: deleting a kept video is refused unless the caller says it means it. That, and
+ * the Salvos filter, which it always drove.
  *
  * PUT and DELETE on a sub-resource rather than a POST verb, because the flag is a state to arrive
  * at and not an event: calling either twice is the same as calling it once. Resolves to nothing —
@@ -118,6 +119,45 @@ export async function setVideoKept(videoId, kept) {
     return handle(response);
   }
   return null;
+}
+
+/**
+ * Deletes a video: its ladder, the torrent it came from, and everything the API remembers of it.
+ *
+ * The only way media leaves the disk. Nothing expires, so a library that is filling up empties
+ * because someone emptied it.
+ *
+ * `force` is what the Salvos marker costs: without it a kept video answers 409 rather than being
+ * deleted. The caller is expected to ask the person again and retry with force, not to send it
+ * pre-emptively — a force that is always on is the same as no marker at all.
+ *
+ * Resolves to nothing; the API answers 204.
+ */
+export async function deleteVideo(videoId, { force = false } = {}) {
+  const query = force ? '?force=true' : '';
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/videos/${encodeURIComponent(videoId)}${query}`,
+    { method: 'DELETE' },
+  );
+  if (!response.ok) {
+    return handle(response);
+  }
+  return null;
+}
+
+/**
+ * How much room the library has left, and what it is already using.
+ *
+ * Worth showing precisely because nothing prunes itself: the disk is the only limit there is now,
+ * so it should be visible before an ingestion is refused at the floor rather than after.
+ *
+ * Resolves to `{ usableBytes, totalBytes, mediaBytes, videoCount, minFreeBytes }`. The two byte
+ * counts about the volume are null when it could not be read — not zero, which would read as a
+ * full disk.
+ */
+export async function getStorage() {
+  const response = await fetch(`${API_BASE_URL}/api/v1/storage`);
+  return handle(response);
 }
 
 /**
