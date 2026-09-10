@@ -157,12 +157,17 @@ aztcast:
 
     transcoding:
       pool:
-        # One ffmpeg process now encodes all five rungs at once, so a single job uses
-        # far more CPU and out-of-heap memory than the old one-rung-at-a-time loop did.
+        # One ffmpeg process encodes the whole ladder at once, so a single job uses far
+        # more CPU and out-of-heap memory than the old one-rung-at-a-time loop did.
         # max-size is concurrent *videos*; it came down from 4 when the ladder went from
         # two sequential rungs to five parallel ones. Raise it and the container memory
         # limit together — docs/runbook.md records the exit-137 this causes.
-        core-size: 1
+        #
+        # core-size equals max-size deliberately. ThreadPoolTaskExecutor only grows past
+        # core-size once the queue is *full*, so core-size: 1 with a 500-deep queue meant
+        # the second thread would have appeared on the 501st video and never before: two
+        # concurrent transcodes were configured and one was what ran.
+        core-size: 2
         max-size: 2
         queue-capacity: 500
         thread-name-prefix: "transcode-"
