@@ -140,6 +140,11 @@
     --z-controls: 20;
     --z-popover: 30;
     --z-modal: 40;
+    /* The map's own overlay, on Leaflet's internal scale rather than this one, because what it
+       stacks against are the map's children and not the page. Above every pane, the popups at
+       700 included; below the control corners at 1000, so the +/- buttons stay crisp above the
+       scrim — they are the alternative the overlay is pointing at. */
+    --z-map-overlay: 900;
 
     /* ---- Layout ---- */
     --content-width: 1440px;

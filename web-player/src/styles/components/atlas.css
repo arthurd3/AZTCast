@@ -110,6 +110,39 @@
     /* The ocean. With no tiles this is the whole background, not a fallback behind one. */
     background: var(--bg);
     overflow: hidden;
+    /* Leaflet sets this inline when it finds the container static, but the gesture hint below is
+       absolute inside here and should not need a third party's inline style to know what it is
+       positioned against. */
+    position: relative;
+  }
+
+  /*
+   * The gesture hint.
+   *
+   * Raised when a wheel arrives without the modifier that would hand it to the map, and gone a
+   * moment later. A scrim across the whole map rather than a tooltip in a corner, because what it
+   * is answering about is the thing the pointer is already on.
+   */
+  .atlas__gesture-hint {
+    position: absolute;
+    inset: 0;
+    z-index: var(--z-map-overlay);
+    display: grid;
+    place-items: center;
+    padding: var(--space-4);
+    background: color-mix(in oklab, var(--bg) 55%, transparent);
+    color: var(--text);
+    font-size: var(--text-sm);
+    text-align: center;
+    /* Advisory only: dragging, the popups and the +/- control all keep working underneath. */
+    pointer-events: none;
+    opacity: 0;
+    /* Opacity is the whole animation — no --glass-blur here, which is never animated. */
+    transition: opacity var(--dur-base) var(--ease-out);
+  }
+
+  .atlas__gesture-hint.is-visible {
+    opacity: 1;
   }
 
   .atlas__popup {

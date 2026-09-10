@@ -50,6 +50,29 @@ const UNCONSTRAINED_ZOOM = -5;
 const MIN_RADIUS_PX = 5;
 const MAX_RADIUS_PX = 26;
 
+/**
+ * How long the gesture hint stays after the wheel event that raised it.
+ *
+ * Rearmed rather than accumulated, so scrolling a long way past the map shows one steady hint
+ * instead of one that blinks out in the middle of the gesture that is still asking for it.
+ */
+const ZOOM_HINT_MS = 1500;
+
+/**
+ * Wheel travel worth one zoom level.
+ *
+ * A mouse notch reports a `deltaY` of about 100, so a notch is about a level. A trackpad pinch
+ * reports dozens of small deltas instead and lands fractional, which is exactly what `zoomSnap: 0`
+ * below exists to allow.
+ */
+const WHEEL_PX_PER_ZOOM = 120;
+
+/** Ceiling per event, so a single coarse notch cannot cross the whole range at once. */
+const MAX_ZOOM_PER_WHEEL = 1;
+
+/** Slack for comparing two zooms, which `zoomSnap: 0` makes fractional. */
+const ZOOM_EPSILON = 1e-6;
+
 export function createWorldMap(container, { onSelect } = {}) {
   const map = L.map(container, {
     // Equirectangular. See the note at the top of this file — it is the projection, not the styling,
@@ -67,13 +90,58 @@ export function createWorldMap(container, { onSelect } = {}) {
     // sat in the middle of a container twice as wide. With the projection fixed but this left at
     // its default, the gap comes straight back.
     zoomSnap: 0,
-    // Off, because this map sits in the middle of a page people scroll past. With it on, a wheel
-    // gesture aimed at the document zooms the map instead and the reader loses their place in
-    // both. Dragging, double-click and the +/- control all still zoom.
+    // Off, and it has to stay off: Leaflet's handler calls `DomEvent.stop()` on every wheel event
+    // it is given, and this map is a full-width block in the middle of a page people scroll past,
+    // so a wheel aimed at the document would zoom the map and lose the reader their place in both.
+    //
+    // The wheel is not given up, though — `onWheel` below hands the gesture to the map when a
+    // modifier is held, and says so on screen when one is not. Dragging, double-click, the +/-
+    // control and the keyboard are all unaffected.
     scrollWheelZoom: false,
   });
 
   fitWorld();
+
+  const hint = createZoomHint(container);
+
+  /**
+   * The wheel, divided between the page and the map by whether a modifier is down.
+   *
+   * Registered non-passive, which is load-bearing rather than cautious: a passive listener's
+   * `preventDefault` is ignored, and the browser would then zoom the whole page underneath the map
+   * zooming with it.
+   */
+  function onWheel(event) {
+    if (!(event.ctrlKey || event.metaKey)) {
+      // No preventDefault, deliberately — this wheel belongs to the document. Saying so out loud
+      // is the hint's whole job: a map that silently ignores a wheel reads as a broken map.
+      hint.show();
+      return;
+    }
+
+    // Claims the gesture from the browser, which would otherwise zoom the page. A Mac trackpad
+    // pinch arrives here too, the OS reporting it as a wheel with ctrlKey set.
+    event.preventDefault();
+    hint.hide();
+
+    const levels = clamp(
+      -wheelPixels(event) / WHEEL_PX_PER_ZOOM,
+      -MAX_ZOOM_PER_WHEEL,
+      MAX_ZOOM_PER_WHEEL,
+    );
+    const current = map.getZoom();
+    // Clamped here rather than left to setView, which clamps too late: setZoomAround works out how
+    // far to shift the centre from the zoom it is handed, so an out-of-range one drags the map
+    // sideways on its way to being trimmed back.
+    const target = clamp(current + levels, map.getMinZoom(), map.getMaxZoom());
+    if (target === current) {
+      return;
+    }
+    // Around the pointer, not the centre: the reader aimed at something.
+    map.setZoomAround(map.mouseEventToContainerPoint(event), target, { animate: false });
+  }
+
+  container.addEventListener('wheel', onWheel, { passive: false });
 
   const countries = unwrapAntimeridian(feature(worldTopology, worldTopology.objects.countries));
   L.geoJSON(countries, {
@@ -110,16 +178,38 @@ export function createWorldMap(container, { onSelect } = {}) {
   }
 
   /**
+   * The same floor, re-derived for a container that changed shape, without moving the view.
+   *
+   * A floor left over from a wider box is higher than a narrower one can support, and a reader who
+   * had zoomed in would be held above a world their container could now show all of. `setMinZoom`
+   * pulls the view up by itself when the new floor lands above where they are.
+   */
+  function refitFloor() {
+    map.setMinZoom(UNCONSTRAINED_ZOOM);
+    map.setMinZoom(map.getBoundsZoom(BOUNDS));
+  }
+
+  /**
    * Re-fit when the box changes shape.
    *
    * Leaflet measures its container once, at construction. This one is built at module load, so
    * every later resize — a window drag, an orientation change, a scrollbar appearing — left the map
    * sized for a box that no longer existed until the page was reloaded. cosmos.js watches its own
    * canvas the same way.
+   *
+   * Only a reader who has not zoomed gets re-fitted. Doing it unconditionally was harmless while
+   * nothing but the +/- control could zoom; now that the wheel can, it would throw a chosen zoom
+   * away on every scrollbar that appears — and expanding a video below the map makes one appear.
    */
   const resizeObserver = new ResizeObserver(() => {
+    // Read first: invalidateSize changes the answer.
+    const wasFitted = map.getZoom() <= map.getMinZoom() + ZOOM_EPSILON;
     map.invalidateSize({ animate: false });
-    fitWorld();
+    if (wasFitted) {
+      fitWorld();
+      return;
+    }
+    refitFloor();
   });
   resizeObserver.observe(container);
 
@@ -167,6 +257,8 @@ export function createWorldMap(container, { onSelect } = {}) {
 
   function destroy() {
     resizeObserver.disconnect();
+    container.removeEventListener('wheel', onWheel);
+    hint.destroy();
     markers.clearLayers();
     map.remove();
   }
@@ -235,6 +327,68 @@ function radiusFor(value, busiest) {
   }
   const scaled = Math.sqrt(value / busiest);
   return MIN_RADIUS_PX + scaled * (MAX_RADIUS_PX - MIN_RADIUS_PX);
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+/**
+ * A wheel event's travel in pixels, whatever unit it chose to report it in.
+ *
+ * Firefox reports lines where Chrome reports pixels, so read literally the same notch is worth
+ * thirty times more in one browser than in the other.
+ */
+function wheelPixels(event) {
+  if (event.deltaMode === 1) {
+    return event.deltaY * 40; // lines
+  }
+  if (event.deltaMode === 2) {
+    return event.deltaY * 400; // pages
+  }
+  return event.deltaY; // pixels
+}
+
+/**
+ * The overlay that answers "why did nothing happen".
+ *
+ * Raised only by a wheel the map deliberately let through to the page, and gone a moment later. A
+ * line of caption under the map would explain the same gesture on every visit to everyone,
+ * including the readers who never try it — and there is nothing to explain until somebody does.
+ */
+function createZoomHint(container) {
+  const element = document.createElement('div');
+  element.className = 'atlas__gesture-hint';
+  // The map carries role="img", so everything inside it is already presentational to a screen
+  // reader — and this is advice about a mouse, for whoever has one.
+  element.setAttribute('aria-hidden', 'true');
+  element.textContent = `Use ${modifierLabel()} + rolagem para ampliar o mapa`;
+  container.appendChild(element);
+
+  let timer = null;
+
+  return {
+    show() {
+      element.classList.add('is-visible');
+      // Rearmed, not stacked: the hint outlasts the gesture rather than its first event.
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => element.classList.remove('is-visible'), ZOOM_HINT_MS);
+    },
+    hide() {
+      window.clearTimeout(timer);
+      element.classList.remove('is-visible');
+    },
+    destroy() {
+      window.clearTimeout(timer);
+      element.remove();
+    },
+  };
+}
+
+/** Both modifiers zoom on both platforms. This only names the one the reader expects to read. */
+function modifierLabel() {
+  const platform = navigator.userAgentData?.platform ?? navigator.platform ?? '';
+  return /mac/i.test(platform) ? '⌘' : 'Ctrl';
 }
 
 function popup(place) {
