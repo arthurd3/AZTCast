@@ -43,7 +43,13 @@ patent-free ffmpeg (Fedora's default among them) carry `libopenh264` rather than
 
 ```bash
 make dev          # API on :8080, player on :5173
+make dev-down     # stop a leftover run still holding those ports
 ```
+
+`make dev` clears whatever a previous run left behind before it starts, so a
+session that crashed does not block the next one. It only ever signals processes
+belonging to this checkout: if something else holds :8080 or :5173 it names the
+process and stops rather than killing a stranger. `FORCE_PORTS=1` overrides that.
 
 Or separately:
 

@@ -88,8 +88,29 @@ The API failing to bind shows up as
 `Failed to start bean 'webServerStartStop'`.
 
 ```bash
+make dev-down       # the usual cause: a previous local run is still alive
 ss -tlnp | grep 8080
 ```
+
+`make dev` runs that itself before starting, so this is only needed when
+diagnosing by hand or after `make api`, which has no teardown of its own.
+
+It is scoped to this checkout by construction — a process is signalled only when
+its working directory is inside the repository *and* its command line names the
+API's main class, Maven's launcher, or `web-player/`. When something else holds
+the port, `dev-down` prints what it is and exits 2 rather than killing it;
+`FORCE_PORTS=1 make dev` overrides. Running it in a second terminal will stop the
+`make dev` in the first — one local stack at a time is the intent.
+
+Why a leftover outlives the shell that started it: `spring-boot:run` always forks
+the application into a second JVM, and the plugin destroys that JVM from a
+shutdown hook. SIGTERM to Maven runs the hook and takes the application with it;
+SIGKILL skips it and leaves a JVM on :8080 with no parent. So never `kill -9`
+Maven unless you are killing the forked JVM by pid as well.
+
+The same run also holds `aztcast.streaming.torrent.acceptor-port` (6891) and
+stays in its swarms, so an orphan costs bandwidth even when it is not blocking
+a port.
 
 For the compose stack, the player's host port is `${WEB_PORT:-8000}`:
 
