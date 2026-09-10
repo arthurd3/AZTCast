@@ -22,9 +22,15 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.IntConsumer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 /** {@link TorrentDownloader} backed by the {@code bt} library. */
 @Service
+@ConditionalOnProperty(
+        prefix = "aztcast.streaming.torrent",
+        name = "engine",
+        havingValue = "embedded",
+        matchIfMissing = true)
 @Slf4j
 public class BtTorrentDownloader implements TorrentDownloader {
 

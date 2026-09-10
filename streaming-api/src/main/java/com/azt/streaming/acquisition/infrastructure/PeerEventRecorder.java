@@ -18,6 +18,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 /**
  * Turns the library's peer events into {@link PeerObservation}s.
@@ -37,6 +38,11 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
+@ConditionalOnProperty(
+        prefix = "aztcast.streaming.torrent",
+        name = "engine",
+        havingValue = "embedded",
+        matchIfMissing = true)
 public class PeerEventRecorder {
 
     private final BtRuntime runtime;

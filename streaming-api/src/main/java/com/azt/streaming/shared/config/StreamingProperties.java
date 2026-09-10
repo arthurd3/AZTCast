@@ -212,7 +212,23 @@ public record StreamingProperties(
             @NotNull List<String> extraTrackers,
             @NotNull List<String> deadTrackers,
             boolean downloadVideoOnly,
+            @NotNull Engine engine,
+            @NotNull Path engineSocket,
             @NestedConfigurationProperty @Valid @NotNull Network network) {}
+
+    /**
+     * Which BitTorrent implementation acquisition runs on.
+     *
+     * <p>The two differ in where they run more than in what they do. {@code EMBEDDED} is the
+     * {@code bt} library inside this JVM, which means every byte from an unknown peer is parsed by
+     * code sharing a process with the media root, the job store and the provider database.
+     * {@code BROKERED} is a separate, sandboxed process reached over a Unix socket, which can write
+     * to the downloads directory and do nothing else at all. See ADR-0032.
+     */
+    public enum Engine {
+        EMBEDDED,
+        BROKERED
+    }
 
     /**
      * How the BitTorrent client presents itself on the network.
