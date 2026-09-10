@@ -26,6 +26,20 @@ Retention and `aztcast.streaming.redis.job-ttl` are two halves of one number.
 Media outliving its job leaves directories nothing can name; a job outliving its
 media reports READY for a video that is gone. **Change them together.**
 
+**Saved videos are exempt.** A `keep.json` in a video's HLS directory makes the
+reaper skip it, forever, and the library writes one when someone marks a video.
+That breaks the pairing above in the safe direction only — the job record still
+expires, leaving a listed video with no job, which is what every older video looks
+like anyway. It also means the reaper is no longer a guarantee against a full disk:
+
+```bash
+# what is being kept, and how much it costs
+find /var/lib/aztcast/hls -name keep.json -printf '%h\n' | xargs -r du -sh
+```
+
+Deleting the marker returns that video to the ordinary schedule. The raw torrent
+under `downloads/` is reaped on schedule whether or not the video is kept.
+
 To reclaim space now, delete a video's directories by hand:
 
 ```bash
@@ -33,7 +47,73 @@ docker compose -f deploy/docker-compose.yml exec streaming-api \
   rm -rf /var/lib/aztcast/hls/<videoId> /var/lib/aztcast/downloads/<videoId>
 ```
 
-Both trees are regenerable caches: deleting them costs a re-ingestion, not data.
+Both trees are regenerable caches: deleting them costs a re-ingestion, not data —
+with one exception now, which is that a saved video is the only copy of a decision
+someone made, and re-ingesting it will not restore the marker.
+
+### Keeping media on the host rather than in a volume
+
+The compose stack puts everything in a named volume, `media`. That survives
+`docker compose down`, but **`docker compose down -v` takes it** — saved videos and
+`providers.db` with it, and `providers.db` is not regenerable. To keep media somewhere
+you can see and back up, bind-mount it instead:
+
+```yaml
+# deploy/docker-compose.override.yml
+services:
+  streaming-api:
+    volumes:
+      - /srv/aztcast:/var/lib/aztcast
+  web-player:
+    volumes:
+      - /srv/aztcast:/var/lib/aztcast:ro
+```
+
+The read-only mount on `web-player` is not optional: nginx needs it to serve segments
+through `X-Accel-Redirect`, and it must not be able to write there.
+
+## Torrent throughput
+
+The numbers that govern download speed are under
+`aztcast.streaming.torrent.network`, and the startup log prints every one of them:
+
+```
+BitTorrent runtime: port=6891 encryption=PREFER_ENCRYPTED lsd=off pex=on bind=...
+  peers=200/torrent (60 active, 600 global) pending=200 trackerBatch=200 ioQueue=2048
+```
+
+If a download is slow, read that line first — it distinguishes a tuned runtime from a
+defaulted one. Then read the progress line, which carries the two facts a percentage
+cannot give you:
+
+```
+Progress 43.0% for magnet ... - 37 peers, 4.82 MiB/s
+```
+
+Few peers is a discovery problem: check the swarm is alive, that `6891/tcp` and
+`6891/udp` are published and forwarded (without an inbound port the client is
+outbound-only and loses every peer that is also behind a NAT), and that the tracker
+list is not stale. The base stack publishes that port on `streaming-api`; under the
+VPN overlay it is published on `gluetun` instead, because a container sharing another's
+network namespace cannot publish ports of its own — Docker refuses the pair with
+*"conflicting options: port publishing and the container type network mode"*. Whether
+it is reachable from outside still depends on the router, or on the VPN provider
+forwarding one. Many peers and a low rate is a transfer problem: raise
+`max-active-peer-connections-per-torrent`, which is the real transfer ceiling —
+`max-peer-connections-per-torrent` only bounds established connections, and each one
+costs about a megabyte of network buffer, so raise the container memory limit with it.
+
+**Refreshing the tracker list.** `aztcast.streaming.torrent.extra-trackers` is a
+snapshot, deliberately not a live fetch — looking one up per ingestion would send a
+request timed to what is about to be downloaded. Refresh it by hand:
+
+```bash
+curl -s https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best.txt \
+  | grep -v '^$' | sed 's/^/        - /'
+```
+
+Paste the result over the list in `application.yml`. An empty list disables the
+mechanism; the magnet's own trackers are always used either way.
 
 ## Redis
 
@@ -81,6 +161,18 @@ the heap dies as soon as an encode starts. The image sets
 `-XX:MaxRAMPercentage=50` for that reason, and compose sets a 3 GB limit.
 `aztcast.streaming.transcoding.pool.max-size` is how many ffmpeg processes can
 run at once; raise it and the memory limit together, never one alone.
+
+Note that `core-size` must equal `max-size` for that setting to mean anything.
+`ThreadPoolTaskExecutor` only grows past `core-size` once the queue is **full**, so
+`core-size: 1` with a 500-deep queue meant the second thread would have appeared on
+the 501st video and never before — two concurrent transcodes were configured and one
+was what ran. They are equal now, which also means the memory ceiling is reached at
+`max-size` encodes rather than at one.
+
+The swarm shares that budget. Each peer connection holds about a megabyte of network
+buffer, so `max-peer-connections-per-torrent` (200) is roughly 200 MB per download,
+bounded globally by `max-peer-connections` (600). Raising either of those competes
+with ffmpeg for the same 3 GB.
 
 ## "Port 8080 already in use"
 

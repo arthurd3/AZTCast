@@ -23,3 +23,5 @@ editing it.
 | [0015](0015-ip-masking-belongs-to-the-network.md)           | IP masking belongs to the network               | Accepted |
 | [0016](0016-the-provenance-map-is-drawn-offline.md)         | The provenance map is drawn offline             | Refined by [0017](0017-an-equirectangular-map-and-derived-signals.md) |
 | [0017](0017-an-equirectangular-map-and-derived-signals.md)  | An equirectangular map, and derived signals     | Accepted |
+| [0018](0018-the-top-rung-is-copied-not-encoded.md)          | The top rung is copied, not encoded             | Supersedes part of [0008](0008-cmaf-ladder-in-one-pass.md) |
+| [0019](0019-kept-videos-outlive-the-retention-window.md)    | Kept videos outlive the retention window        | Amends [0003](0003-filesystem-as-the-store.md), [0009](0009-redis-for-state-not-for-media.md) |

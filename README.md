@@ -110,6 +110,14 @@ as long as its media exists — a restart that loses every job record does not e
 it. Search and sort act on the listing in the browser, not as a query: the endpoint
 returns everything on disk and the retention window keeps that small.
 
+**Videos you save are not deleted.** Media older than the retention window is reaped
+automatically, which is what keeps the disk from filling; the marker in the corner of
+each card exempts that video from it, and the **Salvos** filter shows only the ones
+you have marked. What persists is the watchable ladder — the raw torrent underneath it
+still expires on schedule, because it is a second full copy of the same video and
+nothing seeds it
+([ADR-0019](docs/decisions/0019-kept-videos-outlive-the-retention-window.md)).
+
 Paste a magnet link on the library page and press **Enviar** to add one. It polls
 the job with a backoff and opens the watch page once it is `READY`; a failure shows
 its reason rather than a 404 you have to interpret. The download step carries a real
@@ -244,7 +252,9 @@ VIDEO_ID=<uuid> ./scripts/smoke-test.sh http://localhost:8000
 - [HLS troubleshooting](docs/troubleshooting-hls.md) — codec and MIME checklist
 - [Decision records](docs/decisions/) — MADR, immutable once accepted. The
   recent ones cover the delivery path ([0007](docs/decisions/0007-nginx-serves-the-bytes.md)),
-  the encoding ladder ([0008](docs/decisions/0008-cmaf-ladder-in-one-pass.md)),
+  the encoding ladder ([0008](docs/decisions/0008-cmaf-ladder-in-one-pass.md)) and
+  the copied top rung that supersedes half of it
+  ([0018](docs/decisions/0018-the-top-rung-is-copied-not-encoded.md)),
   Redis ([0009](docs/decisions/0009-redis-for-state-not-for-media.md)) and the
   player driving ingestion ([0010](docs/decisions/0010-the-player-drives-ingestion.md))
 
@@ -260,7 +270,9 @@ honest limit.
 
 Two things that are handled: media older than
 `aztcast.streaming.storage.retention` (7d) is deleted automatically, so filling
-the disk now takes sustained effort rather than one afternoon; and nginx sets
+the disk now takes sustained effort rather than one afternoon — saved videos are
+exempt from that by design, so an instance where everything is saved will still
+fill up; and nginx sets
 `X-Forwarded-For` to `$remote_addr` rather than appending to it, so a client
 cannot choose its own rate-limit bucket by sending its own header.
 

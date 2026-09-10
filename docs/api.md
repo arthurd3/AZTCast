@@ -66,7 +66,8 @@ Cache-Control: no-store
     "posterUrl": "/api/v1/stream/2724a02c-f275-49d2-8389-e76bfeacd4c6/poster.jpg",
     "qualities": ["1080p", "720p", "480p", "360p", "240p"],
     "sizeBytes": 13048576,
-    "readyAt": "2026-09-08T22:38:11Z"
+    "readyAt": "2026-09-08T22:38:11Z",
+    "kept": false
   }
 ]
 ```
@@ -84,7 +85,53 @@ request it anyway.
 media at transcode time, so anything transcoded before that existed has no name to give; clients
 should fall back to the `videoId`.
 
+`qualities` is what was actually produced, not what is configured. The ladder is planned from
+the source: no rung is taller than the file that arrived, and when that file is already H.264 the
+top rung is a copy of it named for the source's own height — so a 1080p source gives
+`["1080p", "720p", …]` and a 720p one simply has no 1080p rung
+([ADR-0018](decisions/0018-the-top-rung-is-copied-not-encoded.md)).
+
+`kept` is always present. `true` means the video is exempt from the retention window and will not
+be deleted automatically.
+
 Not rate limited, and `no-store`: the list changes the moment an ingestion finishes.
+
+## `PUT /api/v1/videos/{videoId}/keep`
+
+## `DELETE /api/v1/videos/{videoId}/keep`
+
+Marks a video to outlive the retention window, or stops keeping it.
+
+```http
+204 No Content
+```
+
+A sub-resource with `PUT`/`DELETE` rather than a verb, because the flag is a state to arrive at
+rather than an event: calling either twice is the same as calling it once, and `DELETE` on a video
+that was never kept is a success. The only failure is a video whose media is already gone:
+
+```http
+404 Not Found
+Content-Type: application/problem+json
+
+{
+  "type": "https://aztcast.dev/problems/video-not-found",
+  "title": "Video not found",
+  "status": 404,
+  "detail": "No video with id 2724a02c-f275-49d2-8389-e76bfeacd4c6"
+}
+```
+
+Distinct from `job-not-found`, and the distinction is load-bearing: a job expiring while its media
+lives is the ordinary state of every older video, so reporting one as the other would tell a client
+to retry an ingestion that is not the problem.
+
+Keeping exempts the HLS ladder only. The raw torrent under `downloads/` is reaped on schedule
+either way ([ADR-0019](decisions/0019-kept-videos-outlive-the-retention-window.md)).
+
+**Not rate limited.** The limiter is registered on the exact path `/api/v1/videos`, which does not
+match this one. That is deliberate — the limit exists because an ingestion costs hours of CPU and
+gigabytes of disk, and writing a marker file costs neither.
 
 ## `GET /api/v1/videos/active`
 
