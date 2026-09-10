@@ -57,4 +57,21 @@ public interface MediaTranscoder {
      * media and starts no process.
      */
     LadderReport inspect(String videoId);
+
+    /**
+     * What this build would publish as the audio rendition for {@code inputFile}, right now.
+     *
+     * <p>Compared against what {@link #inspect} read off the published master, this is how a repair
+     * decides that a host has gained a decoder since the ingestion — the one difference nothing
+     * else in the system would ever notice, because the ladder is perfectly intact either way.
+     */
+    AudioPlan plannedAudio(Path inputFile);
+
+    /**
+     * Re-encodes the shared audio rendition and rewrites the manifests, leaving the video alone.
+     *
+     * <p>Seconds rather than minutes: the rungs are already correct and re-encoding them would
+     * produce identical bytes.
+     */
+    CompletableFuture<Void> rebuildAudio(Path inputFile, String videoId);
 }

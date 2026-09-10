@@ -40,9 +40,13 @@ public final class AudioPlanner {
         }
         ProbedAudio track = primary.get();
 
-        // Already exactly what HLS wants. Copying costs nothing, needs no decoder, and loses no
-        // generation of quality — the one outcome that is better than a good encode.
-        if (track.isPlainAac() && withinChannelBudget(track, preferences)) {
+        // Already exactly what this would produce. Copying costs nothing, needs no decoder, and
+        // loses no generation of quality — the one outcome better than a good encode.
+        //
+        // The test used to be "AAC-LC with at most two channels", which re-encoded every 5.1
+        // AAC-LC source purely to fold it to stereo. Now that the layout is preserved, the
+        // question is simply whether encoding would change anything.
+        if (track.isPlainAac() && preferences.wouldLeaveUnchanged(track)) {
             return AudioPlan.copy(track, null);
         }
 
@@ -73,16 +77,5 @@ public final class AudioPlanner {
         }
 
         return AudioPlan.none(obstacle + "; encoding video only");
-    }
-
-    /**
-     * Whether the track can be copied as-is rather than downmixed.
-     *
-     * <p>An unreported channel count counts as acceptable. ffprobe omits it on some containers, and
-     * refusing to copy a perfectly good AAC track over a missing field would trade a free remux for
-     * an encode on nothing but a guess.
-     */
-    private static boolean withinChannelBudget(ProbedAudio track, AudioPreferences preferences) {
-        return track.channels() <= 0 || track.channels() <= preferences.channels();
     }
 }

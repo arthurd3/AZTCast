@@ -189,6 +189,34 @@ class RealFfmpegLadderTest {
     }
 
     @Test
+    @DisplayName("keeps a 5.1 source at 5.1 rather than folding it to stereo")
+    void preservesTheSourceChannelLayout(@TempDir Path tmp) throws Exception {
+        assumeTrue(hasEncoder("ac3"), "no AC-3 encoder to build the fixture with");
+
+        // AC-3 because this build can both encode it (to make the fixture) and decode it (to prove
+        // the pipeline re-encodes rather than passes through). The shipped case is E-AC-3, which
+        // behaves identically on a host that has its decoder.
+        Path source = tmp.resolve("source.mkv");
+        generateSurroundClip(source);
+        assertThat(audioChannelsIn(source)).isEqualTo(6);
+        Path outputDirectory = Files.createDirectory(tmp.resolve("hls"));
+
+        transcoder(realProperties(), outputDirectory, null)
+                .transcodeToHls(source, "vid", percent -> {})
+                .join();
+
+        // Six channels out, not two. Folding to stereo threw away four channels for a downmix the
+        // viewer's own output device does better.
+        assertThat(audioCodecIn(outputDirectory.resolve("audio.m3u8"))).isEqualTo("aac");
+        assertThat(audioChannelsIn(outputDirectory.resolve("audio.m3u8"))).isEqualTo(6);
+
+        String master = Files.readString(outputDirectory.resolve(MediaStorage.MASTER_PLAYLIST));
+        assertThat(master).contains("CHANNELS=\"6\"").contains("mp4a.40.2");
+        // AAC is mp4a.40.2 whatever its layout, so there is no video-only family to advertise.
+        assertThat(master.lines().filter(line -> line.startsWith("#EXT-X-STREAM-INF"))).hasSize(LADDER.size());
+    }
+
+    @Test
     @DisplayName("leaves nothing behind when the encode fails")
     void discardsAPartialLadder(@TempDir Path tmp) throws Exception {
         Path source = tmp.resolve("not-a-video.mkv");
@@ -361,6 +389,26 @@ class RealFfmpegLadderTest {
         command.addAll(List.of("-shortest", "-y", target.toString()));
         capture(command);
         assertThat(target).as("fixture clip was not produced").exists();
+    }
+
+    /** A 720p clip with a real 5.1 AC-3 track, from one sine wave fanned across six channels. */
+    private static void generateSurroundClip(Path target) throws Exception {
+        capture(List.of(
+                "ffmpeg", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=25:duration=10",
+                "-f", "lavfi", "-i", "sine=frequency=440:duration=10",
+                "-af", "pan=5.1|c0=c0|c1=c0|c2=c0|c3=c0|c4=c0|c5=c0",
+                "-c:v", encoder, "-c:a", "ac3", "-b:a", "448k",
+                "-shortest", "-y", target.toString()));
+        assertThat(target).as("surround fixture clip was not produced").exists();
+    }
+
+    private static int audioChannelsIn(Path media) throws Exception {
+        String csv = capture(List.of(
+                "ffprobe", "-v", "error", "-select_streams", "a:0",
+                "-show_entries", "stream=channels", "-of", "csv=p=0", media.toString()));
+        return Integer.parseInt(
+                csv.lines().filter(line -> !line.isBlank()).findFirst().orElseThrow().strip().replace(",", ""));
     }
 
     private static Optional<String> availableEncoder() {

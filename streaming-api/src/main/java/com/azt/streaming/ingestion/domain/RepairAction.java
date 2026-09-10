@@ -21,6 +21,16 @@ public enum RepairAction {
      */
     MANIFESTS_REBUILT,
 
+    /**
+     * The ladder was intact, and this host can now produce better audio than it carries.
+     *
+     * <p>What that means in practice: the video was published on a build with no decoder for its
+     * audio, so the track was copied through untouched and only Apple's platforms could play it.
+     * A decoder has been installed since. Only the audio rendition is re-encoded — the video rungs
+     * are already correct, and re-encoding them would spend minutes producing identical bytes.
+     */
+    AUDIO_REBUILT,
+
     /** Segments were missing or empty; the retained download was transcoded again. */
     RETRANSCODED,
 

@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
@@ -38,6 +39,10 @@ public class LadderIntegrity {
 
     /** {@code URI="audio.m3u8"} on an {@code EXT-X-MEDIA} rendition line. */
     private static final Pattern MEDIA_URI = Pattern.compile("URI=\"([^\"]+)\"");
+
+    /** {@code CHANNELS="6"} on the audio rendition line — the only place the layout is written. */
+    private static final Pattern AUDIO_CHANNELS =
+            Pattern.compile("TYPE=AUDIO[^\n]*CHANNELS=\"(\\d+)\"");
 
     /**
      * Video codecs a mainstream browser decodes. AVC only, which is the same constraint
@@ -80,7 +85,41 @@ public class LadderIntegrity {
             problems.add("no variant is playable outside Apple's platforms — every CODECS attribute"
                     + " names something a mainstream browser cannot decode");
         }
-        return new LadderReport(problems, mediaIntact && !playlists.isEmpty());
+        return new LadderReport(problems, mediaIntact && !playlists.isEmpty(), publishedAudio(rendered));
+    }
+
+    /**
+     * The audio rendition as the master describes it: its codec, and how many channels it carries.
+     *
+     * <p>The codec is the part of a variant's {@code CODECS} that is not the video — the attribute
+     * names the combination, so the audio identifier is whatever is left after the {@code avc1.}
+     * entry. The channel count comes from the {@code EXT-X-MEDIA} line, which is the only place it
+     * appears.
+     *
+     * <p>Read back rather than remembered because a repair runs long after the ingestion that
+     * wrote it, on a host whose capabilities may have changed in between — which is exactly the
+     * case this exists to catch.
+     */
+    private static Optional<LadderReport.PublishedAudio> publishedAudio(String rendered) {
+        String codec = null;
+        Matcher codecs = CODECS.matcher(rendered);
+        while (codecs.find() && codec == null) {
+            for (String entry : codecs.group(1).split(",")) {
+                String trimmed = entry.strip();
+                if (!trimmed.toLowerCase(Locale.ROOT).startsWith(WIDELY_PLAYABLE_VIDEO)) {
+                    codec = trimmed;
+                }
+            }
+        }
+        if (codec == null) {
+            return Optional.empty();
+        }
+        int channels = 0;
+        Matcher media = AUDIO_CHANNELS.matcher(rendered);
+        if (media.find()) {
+            channels = Integer.parseInt(media.group(1));
+        }
+        return Optional.of(new LadderReport.PublishedAudio(codec, channels));
     }
 
     /**

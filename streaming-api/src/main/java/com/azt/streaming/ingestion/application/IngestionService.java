@@ -11,6 +11,7 @@ import com.azt.streaming.ingestion.domain.VideoNotRepairableException;
 import com.azt.streaming.shared.storage.MediaStorage;
 import com.azt.streaming.shared.storage.VideoCatalog;
 import com.azt.streaming.shared.storage.VideoNotFoundException;
+import com.azt.streaming.transcoding.domain.AudioPlan;
 import com.azt.streaming.transcoding.domain.LadderReport;
 import com.azt.streaming.transcoding.domain.MediaTranscoder;
 import io.micrometer.core.instrument.Counter;
@@ -183,22 +184,22 @@ public class IngestionService {
      *     there is nothing left to rebuild it from
      */
     public RepairAction repair(String videoId) {
+        LadderReport report = mediaTranscoder.inspect(videoId);
+        Optional<Path> download = mediaStorage.existingDownload(videoId);
+
         if (mediaStorage.resolveHlsAsset(videoId, MediaStorage.POSTER).isEmpty()
-                && mediaStorage.existingDownload(videoId).isEmpty()
-                && mediaTranscoder.inspect(videoId).problems().contains("master.m3u8 is missing or unreadable")) {
+                && download.isEmpty()
+                && report.problems().contains("master.m3u8 is missing or unreadable")) {
             // No poster, no download, no master: there is no video here to repair, as opposed to a
             // video that is broken.
             throw new VideoNotFoundException(videoId);
         }
 
-        LadderReport report = mediaTranscoder.inspect(videoId);
         if (report.isSound()) {
-            log.info("Repair for {} found nothing to do", videoId);
-            return RepairAction.NOTHING_TO_DO;
+            return repairSoundLadder(videoId, report, download);
         }
         log.warn("Repairing {}: {}", videoId, report.summary());
 
-        Optional<Path> download = mediaStorage.existingDownload(videoId);
         if (download.isPresent()) {
             if (report.mediaIntact()) {
                 // The segments are bit-for-bit correct and the playlists describing them are not.
@@ -236,6 +237,37 @@ public class IngestionService {
                                     videoFile, videoId, percent -> recordTranscodeProgress(videoId, percent));
                         }));
         return RepairAction.REFETCHED;
+    }
+
+    /**
+     * A ladder with nothing wrong with it may still not be the best this host can do.
+     *
+     * <p>The case that matters: the video was published on a build with no decoder for its audio,
+     * so the track was copied through untouched and everything but Apple's platforms plays it
+     * silently. Installing a decoder changes what this host would produce and nothing else in the
+     * system would ever notice — the ladder is complete, playable and listed either way.
+     *
+     * <p>Costs one ffprobe of the source, and only when there is a source to probe.
+     */
+    private RepairAction repairSoundLadder(String videoId, LadderReport report, Optional<Path> download) {
+        if (download.isEmpty()) {
+            log.info("Repair for {} found nothing to do", videoId);
+            return RepairAction.NOTHING_TO_DO;
+        }
+        AudioPlan planned = mediaTranscoder.plannedAudio(download.get());
+        if (!planned.present() || !report.audioWouldImproveTo(planned.codecs(), planned.channels())) {
+            log.info("Repair for {} found nothing to do", videoId);
+            return RepairAction.NOTHING_TO_DO;
+        }
+
+        log.info(
+                "Repairing the audio of {}: published as {}, this host can now produce {} at {} channel(s)",
+                videoId,
+                report.audio().map(LadderReport.PublishedAudio::codecs).orElse("nothing"),
+                planned.codecs(),
+                planned.channels());
+        startRepairJob(videoId, null, () -> mediaTranscoder.rebuildAudio(download.get(), videoId));
+        return RepairAction.AUDIO_REBUILT;
     }
 
     /**

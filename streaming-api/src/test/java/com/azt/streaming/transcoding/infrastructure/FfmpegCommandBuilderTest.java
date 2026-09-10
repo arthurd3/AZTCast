@@ -32,8 +32,8 @@ class FfmpegCommandBuilderTest {
     private static final ProbedAudio STEREO_AAC = new ProbedAudio(0, "aac", "LC", 2, 48000, "eng", null, true);
     private static final ProbedAudio SURROUND_EAC3 = new ProbedAudio(0, "eac3", null, 6, 48000, "eng", null, true);
 
-    private static final AudioPreferences AUDIO = new AudioPreferences(
-            List.of("aac"), 128, 2, 48000, UndecodableAudioPolicy.PASSTHROUGH);
+    private static final AudioPreferences AUDIO =
+            new AudioPreferences(List.of("aac"), 0, 0, 64, 512, UndecodableAudioPolicy.PASSTHROUGH);
 
     private static final EncoderChoice LIBX264 = EncoderChoice.of("libx264");
 
@@ -300,5 +300,45 @@ class FfmpegCommandBuilderTest {
         int index = command.indexOf(flag);
         assertThat(index).as("flag %s present", flag).isNotNegative();
         return command.get(index + 1);
+    }
+
+    @Test
+    @DisplayName("the audio arguments come from the source, not from a fixed configuration")
+    void audioArgumentsFollowTheSource() {
+        ProbedAudio surround = new ProbedAudio(0, "eac3", null, 6, 48000, "eng", null, true);
+        List<String> command = builder.build(
+                Path.of("in.mkv"), OUT, plan(LADDER, AudioPlan.encode(surround, "aac", AUDIO)), LIBX264);
+
+        // 6 channels out, not 2, and 64 kbps a channel rather than a flat 128.
+        assertThat(valueOf(command, "-ac:a:0")).isEqualTo("6");
+        assertThat(valueOf(command, "-b:a:0")).isEqualTo("384k");
+
+        ProbedAudio cd = new ProbedAudio(0, "mp3", null, 2, 44100, "eng", null, true);
+        List<String> fromCd = builder.build(
+                Path.of("in.mkv"), OUT, plan(LADDER, AudioPlan.encode(cd, "aac", AUDIO)), LIBX264);
+
+        // 44.1 kHz stays 44.1: forcing 48 put every CD-rate source through a resampler for nothing.
+        assertThat(valueOf(fromCd, "-ar:a:0")).isEqualTo("44100");
+        assertThat(valueOf(fromCd, "-b:a:0")).isEqualTo("128k");
+    }
+
+    @Test
+    @DisplayName("the audio-only command writes the audio rendition and touches nothing else")
+    void buildsAnAudioOnlyCommand() {
+        ProbedAudio surround = new ProbedAudio(0, "eac3", null, 6, 48000, "eng", null, true);
+        List<String> command = builder.buildAudioOnly(
+                Path.of("/in/movie.mkv"), OUT, AudioPlan.encode(surround, "aac", AUDIO));
+
+        // Without -vn the muxer takes the video too and overwrites the rungs this exists to keep.
+        assertThat(command).contains("-vn", "-sn", "-dn");
+        assertThat(command).doesNotContain("-filter_complex", "-c:v:0");
+        assertThat(valueOf(command, "-c:a:0")).isEqualTo("aac");
+        assertThat(command.getLast()).isEqualTo("/out/vid/audio.m3u8");
+
+        // Literal, not templated. ffmpeg substitutes %v in -hls_fmp4_init_filename only when
+        // var_stream_map declares two or more variants; with one it writes a file called
+        // "%v_init.mp4" and points the playlist at it.
+        assertThat(valueOf(command, "-hls_fmp4_init_filename")).isEqualTo("audio_init.mp4");
+        assertThat(valueOf(command, "-hls_segment_filename")).isEqualTo("/out/vid/audio_%03d.m4s");
     }
 }

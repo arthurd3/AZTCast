@@ -16,8 +16,12 @@ import com.azt.streaming.ingestion.domain.StreamJobStatus;
 import com.azt.streaming.ingestion.domain.VideoNotRepairableException;
 import com.azt.streaming.shared.storage.MediaStorage;
 import com.azt.streaming.shared.storage.VideoCatalog;
+import com.azt.streaming.transcoding.domain.AudioPlan;
+import com.azt.streaming.transcoding.domain.AudioPreferences;
+import com.azt.streaming.transcoding.domain.ProbedAudio;
 import com.azt.streaming.transcoding.domain.LadderReport;
 import com.azt.streaming.transcoding.domain.MediaTranscoder;
+import com.azt.streaming.transcoding.domain.UndecodableAudioPolicy;
 import com.azt.streaming.transcoding.domain.TranscodingException;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -28,6 +32,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.IntConsumer;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -351,5 +356,58 @@ class IngestionServiceTest {
         StreamJob job = jobRepository.findById(VIDEO_ID).orElseThrow();
         assertThat(job.status()).isEqualTo(StreamJobStatus.FAILED);
         assertThat(job.failureReason()).contains("still not publishable");
+    }
+
+    private static final ProbedAudio SURROUND = new ProbedAudio(0, "eac3", null, 6, 48000, "eng", null, true);
+
+    private static final AudioPreferences PRESERVE =
+            new AudioPreferences(List.of("aac"), 0, 0, 64, 512, UndecodableAudioPolicy.PASSTHROUGH);
+
+    @Test
+    @DisplayName("rebuilds only the audio when the host has gained a decoder since")
+    void rebuildsAudioThatCanNowBeDoneBetter() {
+        // The ladder is complete, playable and listed. Nothing is wrong with it — and it carries an
+        // ec-3 track that only Apple decodes, because the build that made it had no decoder. That
+        // difference is invisible to every other check in the system.
+        given(mediaTranscoder.inspect(VIDEO_ID))
+                .willReturn(new LadderReport(
+                        List.of(), true, Optional.of(new LadderReport.PublishedAudio("ec-3", 6))));
+        given(mediaStorage.existingDownload(VIDEO_ID)).willReturn(Optional.of(VIDEO_FILE));
+        given(mediaTranscoder.plannedAudio(VIDEO_FILE)).willReturn(AudioPlan.encode(SURROUND, "aac", PRESERVE));
+        given(mediaTranscoder.rebuildAudio(VIDEO_FILE, VIDEO_ID)).willReturn(CompletableFuture.completedFuture(null));
+
+        assertThat(service.repair(VIDEO_ID)).isEqualTo(RepairAction.AUDIO_REBUILT);
+
+        Mockito.verify(mediaTranscoder).rebuildAudio(VIDEO_FILE, VIDEO_ID);
+        // The video rungs are already correct; re-encoding them would produce identical bytes.
+        Mockito.verify(mediaTranscoder, Mockito.never()).transcodeToHls(any(), any(), any());
+        Mockito.verify(mediaStorage, Mockito.never()).discardIncompleteHls(any());
+    }
+
+    @Test
+    @DisplayName("and does not rebuild it again once it matches")
+    void leavesAudioAloneOnceItIsTheBestThisHostCanDo() {
+        given(mediaTranscoder.inspect(VIDEO_ID))
+                .willReturn(new LadderReport(
+                        List.of(), true, Optional.of(new LadderReport.PublishedAudio("mp4a.40.2", 6))));
+        given(mediaStorage.existingDownload(VIDEO_ID)).willReturn(Optional.of(VIDEO_FILE));
+        given(mediaTranscoder.plannedAudio(VIDEO_FILE)).willReturn(AudioPlan.encode(SURROUND, "aac", PRESERVE));
+
+        assertThat(service.repair(VIDEO_ID)).isEqualTo(RepairAction.NOTHING_TO_DO);
+
+        Mockito.verify(mediaTranscoder, Mockito.never()).rebuildAudio(any(), any());
+    }
+
+    @Test
+    @DisplayName("a sound ladder whose source is gone is left alone rather than probed")
+    void doesNotLookForABetterAudioWithoutASource() {
+        given(mediaTranscoder.inspect(VIDEO_ID))
+                .willReturn(new LadderReport(
+                        List.of(), true, Optional.of(new LadderReport.PublishedAudio("ec-3", 6))));
+        given(mediaStorage.existingDownload(VIDEO_ID)).willReturn(Optional.empty());
+
+        assertThat(service.repair(VIDEO_ID)).isEqualTo(RepairAction.NOTHING_TO_DO);
+
+        Mockito.verify(mediaTranscoder, Mockito.never()).plannedAudio(any());
     }
 }

@@ -205,6 +205,44 @@ public class FfmpegCommandBuilder {
     }
 
     /**
+     * Rewrites only the shared audio rendition, leaving every video rung alone.
+     *
+     * <p>For the repair that follows a host gaining a decoder it did not have. The video segments
+     * are already correct — re-encoding them would spend minutes producing identical bytes — but
+     * the audio was copied through untouched because nothing here could decode it, and now
+     * something can.
+     *
+     * <p>Filenames are literal rather than templated, and that is not a style choice. ffmpeg
+     * substitutes {@code %v} in {@code -hls_fmp4_init_filename} only when {@code -var_stream_map}
+     * declares two or more variants; with one, it writes a file called {@code %v_init.mp4} and
+     * points the playlist at it. Verified, because it is the kind of thing that produces a ladder
+     * that looks right in a listing and 404s on the first segment.
+     */
+    public List<String> buildAudioOnly(Path inputFile, Path outputDirectory, AudioPlan audio) {
+        List<String> command = new ArrayList<>(List.of(
+                binary, "-hide_banner", "-nostdin", "-y", "-nostats", "-progress", "pipe:1",
+                "-i", inputFile.toString()));
+
+        command.addAll(audioArgs(audio));
+        // Nothing but the audio. Without -vn the muxer would take the video too and overwrite the
+        // rungs this exists to preserve.
+        command.addAll(List.of("-vn", "-sn", "-dn"));
+
+        String name = AudioPlan.RENDITION_NAME;
+        command.addAll(List.of(
+                "-f", "hls",
+                "-hls_time", String.valueOf(segmentDuration.toSeconds()),
+                "-hls_playlist_type", "vod",
+                "-hls_flags", "independent_segments",
+                "-hls_segment_type", "fmp4",
+                "-hls_fmp4_init_filename", name + "_init.mp4",
+                "-hls_segment_filename", outputDirectory.resolve(name + "_%03d.m4s").toString(),
+                "-var_stream_map", "a:0,name:" + name,
+                outputDirectory.resolve(name + ".m3u8").toString()));
+        return List.copyOf(command);
+    }
+
+    /**
      * Extracts one text subtitle track as WebVTT.
      *
      * <p>Its own invocation rather than an {@code sgroup:} entry in the ladder's

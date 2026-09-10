@@ -64,9 +64,10 @@ public class TranscodePlanner {
         StreamingProperties.Audio audio = config.audio();
         this.audioPreferences = new AudioPreferences(
                 audio.encoderPreference(),
-                audio.bitrateKbps(),
-                audio.channels(),
-                audio.sampleRate(),
+                audio.fixedChannels(),
+                audio.fixedSampleRate(),
+                audio.bitrateKbpsPerChannel(),
+                audio.maxBitrateKbps(),
                 // Mapped by name: shared.config declares its own copy of this enum because nothing
                 // there may depend on a slice, and ArchitectureTest enforces it.
                 UndecodableAudioPolicy.valueOf(audio.onUndecodable().name()));

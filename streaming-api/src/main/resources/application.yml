@@ -66,20 +66,38 @@ aztcast:
         # libfdk_aac beats the native encoder at these bitrates and plenty of builds
         # carry it. Plenty do not, which is why this is a list.
         encoder-preference: [libfdk_aac, aac]
-        bitrate-kbps: 128
-        channels: 2
-        sample-rate: 48000
+
+        # `source` keeps the layout the file arrived with. Folding a 5.1 track to stereo
+        # threw away four channels for no gain in reach: Chrome reports six-channel AAC
+        # as `supported` and `smooth` (navigator.mediaCapabilities), and hands the
+        # downmix to the viewer's own output device, which knows their speakers and we
+        # do not. Set a number here to force a downmix anyway.
+        channels: source
+
+        # `source` too. Forcing 48 kHz put every 44.1 kHz source through a resampler to
+        # arrive nowhere better.
+        sample-rate: source
+
+        # Per channel, so one setting is right for every layout: 128k in stereo, 384k at
+        # 5.1 — which is what Apple's authoring specification asks for. A fixed number
+        # cannot be both.
+        bitrate-kbps-per-channel: 64
+        max-bitrate-kbps: 512
+
         # What to do when this build cannot turn the source audio into AAC. E-AC-3 is
         # the audio of essentially every AMZN WEB-DL and a patent-free ffmpeg has no
         # decoder for it, so this is an ordinary case, not an exotic one.
         #
         #   passthrough  copy the track in untouched when fMP4 can carry it (it can
-        #                carry ac3/eac3/aac/flac/alac/opus). Plays on Safari, iOS and
-        #                tvOS, silent on Chrome — and the CODECS says ec-3, so a player
-        #                knows before it fetches a segment rather than after.
+        #                carry ac3/eac3/aac/flac/alac/opus). Plays on Apple's platforms;
+        #                everywhere else the player takes the video-only variants this
+        #                service also advertises and the video runs silent.
         #   drop         produce a video-only ladder. Honest, universal, silent.
         #   fail         refuse the ingestion, in milliseconds, with a message naming
         #                the missing decoder.
+        #
+        # All three are workarounds for a missing decoder. The fix is a build that has
+        # one — scripts/check-prereqs.sh names the package for this distribution.
         on-undecodable: passthrough
 
       # Text subtitle tracks in the source, republished as WebVTT sidecars and

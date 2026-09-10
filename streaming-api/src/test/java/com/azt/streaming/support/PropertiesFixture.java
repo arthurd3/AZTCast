@@ -37,6 +37,8 @@ public final class PropertiesFixture {
         private Duration segmentDuration = Duration.ofSeconds(4);
         private StreamingProperties.UndecodableAudioPolicy onUndecodableAudio =
                 StreamingProperties.UndecodableAudioPolicy.PASSTHROUGH;
+        private String audioChannels = StreamingProperties.Audio.SOURCE;
+        private String audioSampleRate = StreamingProperties.Audio.SOURCE;
         private boolean subtitlesEnabled = true;
         private List<StreamingProperties.Rendition> renditions = List.of(RENDITION_720P, RENDITION_240P);
         private List<String> videoExtensions = List.of("mp4", "mkv");
@@ -80,6 +82,16 @@ public final class PropertiesFixture {
 
         public Builder ffmpegTimeout(Duration value) {
             this.ffmpegTimeout = value;
+            return this;
+        }
+
+        public Builder audioChannels(String value) {
+            this.audioChannels = value;
+            return this;
+        }
+
+        public Builder audioSampleRate(String value) {
+            this.audioSampleRate = value;
             return this;
         }
 
@@ -155,7 +167,12 @@ public final class PropertiesFixture {
                             ffmpegTimeout,
                             segmentDuration,
                             new StreamingProperties.Audio(
-                                    List.of("libfdk_aac", "aac"), 128, 2, 48000, onUndecodableAudio),
+                                    List.of("libfdk_aac", "aac"),
+                                    audioChannels,
+                                    audioSampleRate,
+                                    64,
+                                    512,
+                                    onUndecodableAudio),
                             new StreamingProperties.Subtitles(subtitlesEnabled),
                             new StreamingProperties.Hardware(false, "/dev/dri/renderD128"),
                             renditions),

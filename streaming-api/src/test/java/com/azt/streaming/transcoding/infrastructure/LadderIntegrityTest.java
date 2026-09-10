@@ -25,7 +25,7 @@ class LadderIntegrityTest {
             new EncodedRendition(new HlsRendition("720p", 1280, 720, 3000), "avc1.4d001f", 2_900_000, 3_210_000);
 
     private static final AudioPreferences PREFERENCES =
-            new AudioPreferences(List.of("aac"), 128, 2, 48000, UndecodableAudioPolicy.PASSTHROUGH);
+            new AudioPreferences(List.of("aac"), 0, 0, 64, 512, UndecodableAudioPolicy.PASSTHROUGH);
 
     private static final EncodedAudio AAC = new EncodedAudio(
             AudioPlan.encode(new ProbedAudio(0, "aac", "LC", 2, 48000, "eng", null, true), "aac", PREFERENCES),
@@ -215,5 +215,43 @@ class LadderIntegrityTest {
         assertThat(report.problems()).anyMatch(p -> p.contains("master.m3u8 is missing"));
         // Nothing was inspected, so nothing can be claimed about the media.
         assertThat(report.mediaIntact()).isFalse();
+    }
+
+    @Test
+    @DisplayName("reads the published audio back, so a repair can tell it could do better")
+    void reportsWhatAudioWasPublished(@TempDir Path dir) throws IOException {
+        writeHealthyLadder(dir);
+        EncodedAudio eac3 = new EncodedAudio(
+                AudioPlan.copy(new ProbedAudio(0, "eac3", null, 6, 48000, "eng", null, true), "no decoder"),
+                640_000,
+                700_000);
+        Files.writeString(dir.resolve("master.m3u8"), writer.render(List.of(RUNG), eac3, List.of()));
+
+        LadderReport report = integrity.inspectPublished(dir);
+
+        assertThat(report.isSound()).isTrue();
+        assertThat(report.audio()).isPresent();
+        assertThat(report.audio().orElseThrow().codecs()).isEqualTo("ec-3");
+        assertThat(report.audio().orElseThrow().channels()).isEqualTo(6);
+
+        // A host that has since gained a decoder would produce AAC — worth rebuilding.
+        assertThat(report.audioWouldImproveTo("mp4a.40.2", 6)).isTrue();
+        // And once it has, the same question answers no. Idempotent by construction.
+        assertThat(report.audioWouldImproveTo("ec-3", 6)).isFalse();
+    }
+
+    @Test
+    @DisplayName("a stereo fold of a surround source is worth rebuilding too")
+    void seesAnUpgradeInChannelCount(@TempDir Path dir) throws IOException {
+        writeHealthyLadder(dir);
+        Files.writeString(dir.resolve("master.m3u8"), writer.render(List.of(RUNG), AAC, List.of()));
+
+        LadderReport report = integrity.inspectPublished(dir);
+
+        // Published stereo AAC by a version of this service that folded everything to two
+        // channels; the same source would now keep six.
+        assertThat(report.audio().orElseThrow().channels()).isEqualTo(2);
+        assertThat(report.audioWouldImproveTo("mp4a.40.2", 6)).isTrue();
+        assertThat(report.audioWouldImproveTo("mp4a.40.2", 2)).isFalse();
     }
 }

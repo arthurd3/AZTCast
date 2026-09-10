@@ -95,18 +95,56 @@ public record StreamingProperties(
      *
      * @param encoderPreference AAC encoders in descending order of preference; the first one this
      *     build carries is used
+     * @param channels {@code source} to keep the layout the source had, or a number to force a
+     *     downmix. {@code source} is the default and the reason is measured: a 5.1 track folded to
+     *     stereo loses four channels, and Chrome reports {@code supported} and {@code smooth} for
+     *     six-channel AAC — so preserving the layout costs nothing in reach and is the only version
+     *     of this that deserves to be called high quality.
+     * @param sampleRate {@code source} to keep the source's rate, or a number to resample. Forcing
+     *     48 kHz put every 44.1 kHz source through a resampler for no benefit.
+     * @param bitrateKbpsPerChannel scales the target with the layout — 64 gives 128k in stereo and
+     *     384k at 5.1, which is what Apple's authoring specification asks for. A fixed number
+     *     cannot be right for both.
+     * @param maxBitrateKbps ceiling, so an exotic 7.1 or 9.1 source cannot ask for an absurd rate
      * @param onUndecodable what to do when the source's audio cannot be turned into AAC here —
      *     {@code passthrough}, {@code drop} or {@code fail}. The situation is ordinary rather than
      *     exotic: E-AC-3 is the audio of essentially every AMZN WEB-DL and a patent-free ffmpeg has
      *     no decoder for it, so this is the knob that decides whether such a file becomes a video
-     *     with Safari-only sound, a silent video, or a failed ingestion.
+     *     with Apple-only sound, a silent video, or a failed ingestion.
      */
     public record Audio(
             @NotEmpty List<String> encoderPreference,
-            @Positive int bitrateKbps,
-            @Positive int channels,
-            @Positive int sampleRate,
-            @NotNull UndecodableAudioPolicy onUndecodable) {}
+            @NotBlank String channels,
+            @NotBlank String sampleRate,
+            @Positive int bitrateKbpsPerChannel,
+            @Positive int maxBitrateKbps,
+            @NotNull UndecodableAudioPolicy onUndecodable) {
+
+        /** The sentinel that means "whatever the source has", as {@code auto} does for the encoder. */
+        public static final String SOURCE = "source";
+
+        /** The configured channel count, or 0 for "match the source". */
+        public int fixedChannels() {
+            return numberOr(channels);
+        }
+
+        /** The configured sample rate, or 0 for "match the source". */
+        public int fixedSampleRate() {
+            return numberOr(sampleRate);
+        }
+
+        private static int numberOr(String value) {
+            if (SOURCE.equalsIgnoreCase(value)) {
+                return 0;
+            }
+            try {
+                return Integer.parseInt(value.trim());
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException(
+                        "aztcast.streaming.ffmpeg.audio expects a number or '%s', got '%s'".formatted(SOURCE, value));
+            }
+        }
+    }
 
     /**
      * Text subtitle tracks in the source, republished as WebVTT.

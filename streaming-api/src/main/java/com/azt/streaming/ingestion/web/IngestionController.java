@@ -120,6 +120,9 @@ public class IngestionController {
     private static String describe(RepairAction action) {
         return switch (action) {
             case NOTHING_TO_DO -> "The ladder is complete and playable; nothing was changed.";
+            case AUDIO_REBUILT -> "The ladder is intact, but this host can now produce better audio than it"
+                    + " carries. Re-encoding the audio rendition only, which takes seconds and leaves"
+                    + " every video rung alone.";
             case MANIFESTS_REBUILT -> "The media was intact and the playlists were not."
                     + " Rebuilding the manifests, which takes seconds and re-encodes nothing.";
             case RETRANSCODED -> "Segments were missing. Transcoding the retained download again.";

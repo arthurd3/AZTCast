@@ -150,6 +150,55 @@ public class FfmpegMediaTranscoder implements MediaTranscoder {
     }
 
     @Override
+    public AudioPlan plannedAudio(Path inputFile) {
+        return planner.plan(mediaProbe.probeSource(inputFile)).audio();
+    }
+
+    @Override
+    @Async(AsyncConfiguration.TRANSCODING_EXECUTOR)
+    public CompletableFuture<Void> rebuildAudio(Path inputFile, String videoId) {
+        log.info("Rebuilding the audio rendition for videoId {}", videoId);
+        Path videoDirectory = mediaStorage.hlsDirectoryFor(videoId);
+
+        ProbedSource source = mediaProbe.probeSource(inputFile);
+        TranscodePlan plan = planner.plan(source);
+        if (!plan.audio().present()) {
+            throw new TranscodingException(
+                    "There is no audio to rebuild for videoId " + videoId + ": " + plan.audio().reason());
+        }
+        if (plan.audio().reason() != null) {
+            log.warn("Audio for videoId {}: {}", videoId, plan.audio().reason());
+        }
+
+        try {
+            // The old rendition first. A shorter re-encode would otherwise leave the tail of the
+            // previous one on disk: unreferenced by the new playlist, invisible, and charged to
+            // the volume forever.
+            discardPreviousAudio(videoDirectory);
+            processRunner.run(
+                    commandBuilder.buildAudioOnly(inputFile, videoDirectory, plan.audio()), timeout);
+            publish(inputFile, videoDirectory, videoId, plan, source);
+        } catch (IOException e) {
+            throw new TranscodingException("Failed to write HLS output for videoId " + videoId, e);
+        }
+        log.info("Audio rebuilt for videoId {}", videoId);
+        return CompletableFuture.completedFuture(null);
+    }
+
+    private void discardPreviousAudio(Path videoDirectory) throws IOException {
+        try (var entries = Files.list(videoDirectory)) {
+            for (Path file : entries.filter(FfmpegMediaTranscoder::isAudioRenditionFile).toList()) {
+                Files.deleteIfExists(file);
+            }
+        }
+    }
+
+    private static boolean isAudioRenditionFile(Path file) {
+        String name = file.getFileName().toString();
+        return name.startsWith(AudioPlan.RENDITION_NAME + "_") || name.equals(AudioPlan.RENDITION_NAME + ".m3u8");
+    }
+
+    @Override
     @Async(AsyncConfiguration.TRANSCODING_EXECUTOR)
     public CompletableFuture<Void> republish(Path inputFile, String videoId) {
         log.info("Rebuilding the manifests for videoId {} from the media already on disk", videoId);

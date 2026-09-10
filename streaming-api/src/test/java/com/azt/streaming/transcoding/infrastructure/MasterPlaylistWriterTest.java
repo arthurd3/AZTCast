@@ -30,7 +30,7 @@ class MasterPlaylistWriterTest {
     private static final ProbedAudio SURROUND_EAC3 = new ProbedAudio(0, "eac3", null, 6, 48000, "por", null, true);
 
     private static final AudioPreferences PREFERENCES =
-            new AudioPreferences(List.of("aac"), 128, 2, 48000, UndecodableAudioPolicy.PASSTHROUGH);
+            new AudioPreferences(List.of("aac"), 0, 0, 64, 512, UndecodableAudioPolicy.PASSTHROUGH);
 
     private static final EncodedAudio AAC_AUDIO =
             new EncodedAudio(AudioPlan.encode(STEREO_AAC, "aac", PREFERENCES), 128_000, 130_000);
@@ -186,5 +186,20 @@ class MasterPlaylistWriterTest {
 
         assertThat(writer.render(LADDER, copied, subtitles).lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF")))
                 .allMatch(l -> l.contains("SUBTITLES=\"subs\""));
+    }
+
+    @Test
+    @DisplayName("a 5.1 AAC rendition is advertised once, with its real channel count")
+    void multichannelAacNeedsNoSecondFamily() {
+        // The dual advertisement exists for audio only Apple decodes. AAC is mp4a.40.2 whatever
+        // its layout, so a 5.1 AAC ladder is one family — and the browser folds it down itself.
+        ProbedAudio surround = new ProbedAudio(0, "eac3", null, 6, 48000, "eng", null, true);
+        EncodedAudio aac51 =
+                new EncodedAudio(AudioPlan.encode(surround, "aac", PREFERENCES), 384_000, 400_000);
+        String playlist = writer.render(LADDER, aac51, List.of());
+
+        assertThat(playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF"))).hasSize(2);
+        assertThat(playlist).contains("CHANNELS=\"6\"").contains("CODECS=\"avc1.4d001f,mp4a.40.2\"");
+        assertThat(playlist.lines().filter("720p.m3u8"::equals)).hasSize(1);
     }
 }

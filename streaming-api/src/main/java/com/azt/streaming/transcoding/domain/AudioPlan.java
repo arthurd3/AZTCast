@@ -116,13 +116,14 @@ public record AudioPlan(
     }
 
     public static AudioPlan encode(ProbedAudio track, String encoder, AudioPreferences preferences) {
+        int channels = preferences.channelsFor(track);
         return new AudioPlan(
                 Mode.ENCODE,
                 track.index(),
                 encoder,
-                preferences.bitrateKbps(),
-                preferences.channels(),
-                preferences.sampleRate(),
+                preferences.bitrateFor(channels),
+                channels,
+                preferences.sampleRateFor(track),
                 LanguageTag.bcp47(track.language()),
                 labelFor(track),
                 // Every encoder in the preference list produces AAC-LC, so this is knowable without
