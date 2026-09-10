@@ -1,4 +1,4 @@
-import { listVideos, posterUrl } from '../api/streamClient.js';
+import { listVideos, posterUrl, setVideoKept } from '../api/streamClient.js';
 import { fraction } from '../player/progressStore.js';
 import { icon } from './icons.js';
 
@@ -26,12 +26,15 @@ const SKELETON_COUNT = 8;
  * query parameter to send: `GET /api/v1/videos` returns everything on disk and the retention
  * window keeps that small, so a round trip per keystroke would buy nothing.
  */
-export function createVideoLibrary(container, { onSelect, onLoad, exclude, emptyAction } = {}) {
+export function createVideoLibrary(
+  container,
+  { onSelect, onLoad, onError, exclude, emptyAction } = {},
+) {
   /** Kept outside render() so a refresh does not lose the highlight on what is playing. */
   let selectedId = null;
   /** Everything the API returned, before the toolbar narrows it. */
   let all = [];
-  let view = { query: '', sort: 'recent' };
+  let view = { query: '', sort: 'recent', keptOnly: false };
 
   function note(title, body, kind, action) {
     const wrapper = document.createElement('div');
@@ -101,7 +104,17 @@ export function createVideoLibrary(container, { onSelect, onLoad, exclude, empty
       return videos.length;
     }
     if (videos.length === 0) {
-      note('Nada corresponde à busca', `Nenhum título contém “${view.query}”. Tente outro termo.`);
+      if (view.keptOnly && !view.query.trim()) {
+        note(
+          'Nenhum vídeo salvo',
+          'Vídeos salvos ficam guardados além da janela de retenção. Use o marcador no canto de um card para salvar.',
+        );
+      } else {
+        note(
+          'Nada corresponde à busca',
+          `Nenhum título contém “${view.query}”. Tente outro termo.`,
+        );
+      }
       return 0;
     }
 
@@ -135,7 +148,59 @@ export function createVideoLibrary(container, { onSelect, onLoad, exclude, empty
     body.append(name, meta);
     button.append(thumbnail(video), body);
     button.addEventListener('click', () => onSelect?.(video.videoId));
-    return button;
+
+    // A shell around the card, because the card is itself a <button> and a button inside a button
+    // is invalid HTML — browsers recover from it by dropping one of them, and which one is not
+    // something to rely on. The shell is the grid item; the card and the keep toggle are siblings.
+    const shell = document.createElement('div');
+    shell.className = 'video-card-shell';
+    shell.append(button, keepToggle(video));
+    return shell;
+  }
+
+  /**
+   * The save toggle, which decides whether the reaper may take this video.
+   *
+   * Optimistic: the marker is a file write on the server and the failure mode is a stale icon, not
+   * lost media, so the button flips immediately and rolls back if the request fails. Waiting for a
+   * round trip to acknowledge a bookmark is the sort of latency people read as a broken button.
+   */
+  function keepToggle(video) {
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'video-card__keep';
+
+    function paint(kept) {
+      toggle.classList.toggle('video-card__keep--on', kept);
+      toggle.setAttribute('aria-pressed', kept ? 'true' : 'false');
+      const label = kept ? 'Remover dos salvos' : 'Salvar vídeo';
+      toggle.setAttribute('aria-label', label);
+      toggle.title = kept ? 'Salvo — não será removido automaticamente' : 'Salvar';
+      toggle.replaceChildren(icon(kept ? 'bookmarkOn' : 'bookmark', 'video-card__keep-icon'));
+    }
+
+    paint(video.kept);
+
+    toggle.addEventListener('click', async () => {
+      const next = !video.kept;
+      video.kept = next;
+      paint(next);
+      toggle.disabled = true;
+      try {
+        await setVideoKept(video.videoId, next);
+      } catch (error) {
+        video.kept = !next;
+        paint(!next);
+        // Not note(): that replaces the whole grid, so one failed bookmark would blank the
+        // library the viewer is looking at. The rollback above is already the visible feedback;
+        // this only adds words, and the host decides where they go.
+        onError?.(error.message);
+        toggle.title = error.message;
+      } finally {
+        toggle.disabled = false;
+      }
+    });
+    return toggle;
   }
 
   function highlight() {
@@ -184,11 +249,14 @@ export function createVideoLibrary(container, { onSelect, onLoad, exclude, empty
 }
 
 /** Narrows and orders the listing for the current toolbar state. */
-function arrange(videos, { query, sort }) {
+function arrange(videos, { query, sort, keptOnly }) {
   const needle = fold(query.trim());
-  const matched = needle
+  let matched = needle
     ? videos.filter((video) => fold(video.title ?? video.videoId).includes(needle))
     : [...videos];
+  if (keptOnly) {
+    matched = matched.filter((video) => video.kept);
+  }
 
   const order = {
     recent: (left, right) => Date.parse(right.readyAt) - Date.parse(left.readyAt),

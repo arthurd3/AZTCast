@@ -35,6 +35,7 @@ const toolbar = createLibraryToolbar(document.getElementById('libraryToolbar'), 
 });
 const library = createVideoLibrary(document.getElementById('library'), {
   onSelect: watch,
+  onError: (message) => status.show(message, 'error'),
   emptyAction: {
     label: 'Enviar o primeiro torrent',
     onClick: () => {

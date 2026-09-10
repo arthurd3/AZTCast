@@ -43,12 +43,35 @@ export function createLibraryToolbar(container, { onChange }) {
   count.setAttribute('role', 'status');
   count.setAttribute('aria-live', 'polite');
 
-  container.replaceChildren(search, sort, count);
+  /*
+   * A filter, not a sort, so it is its own control rather than a fifth entry in the select.
+   * Folding it into the sort list would let someone pick "Salvos" and lose their ordering, and
+   * there would be no way to see saved videos newest-first.
+   */
+  const kept = document.createElement('button');
+  kept.type = 'button';
+  kept.className = 'btn btn--ghost library-toolbar__kept';
+  kept.setAttribute('aria-pressed', 'false');
+  kept.append(icon('bookmark', 'btn__icon'), document.createTextNode('Salvos'));
+
+  container.replaceChildren(search, sort, kept, count);
 
   let timer = null;
+  let keptOnly = false;
   function emit() {
-    onChange({ query: input.value, sort: sort.value });
+    onChange({ query: input.value, sort: sort.value, keptOnly });
   }
+
+  kept.addEventListener('click', () => {
+    keptOnly = !keptOnly;
+    kept.setAttribute('aria-pressed', keptOnly ? 'true' : 'false');
+    kept.classList.toggle('btn--active', keptOnly);
+    kept.replaceChildren(
+      icon(keptOnly ? 'bookmarkOn' : 'bookmark', 'btn__icon'),
+      document.createTextNode('Salvos'),
+    );
+    emit();
+  });
 
   input.addEventListener('input', () => {
     window.clearTimeout(timer);

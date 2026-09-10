@@ -45,6 +45,68 @@
   }
 
   /*
+   * The grid item, and the positioning context for the save toggle.
+   *
+   * It exists because .video-card is a <button> and the toggle is another one: nesting them
+   * would be invalid HTML, which browsers recover from by dropping one — and which one is not
+   * something to build on. Siblings instead, stacked here.
+   */
+  .video-card-shell {
+    position: relative;
+    display: flex;
+  }
+
+  .video-card-shell > .video-card {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /*
+   * Sits over the poster, opposite the quality badges so the two never collide. Visible at all
+   * times rather than on hover: it is the only affordance saying a video can be kept at all, and
+   * a control that appears on hover does not exist on a touchscreen.
+   */
+  .video-card__keep {
+    position: absolute;
+    top: var(--space-2);
+    left: var(--space-2);
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: color-mix(in oklab, var(--void) 70%, transparent);
+    backdrop-filter: blur(8px);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition:
+      color var(--dur-base) var(--ease-out),
+      border-color var(--dur-base) var(--ease-out);
+  }
+
+  .video-card__keep:hover:not(:disabled) {
+    color: var(--text);
+  }
+
+  .video-card__keep:disabled {
+    cursor: progress;
+  }
+
+  .video-card__keep--on {
+    color: var(--accent);
+    border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  }
+
+  .video-card__keep-icon {
+    width: 17px;
+    height: 17px;
+  }
+
+  /*
    * A <button>, so it is focusable and activates from the keyboard with no hand-rolled
    * tabindex or keydown handler. Everything below re-states what the bare-element button rule
    * used to hand it, because that rule is gone.

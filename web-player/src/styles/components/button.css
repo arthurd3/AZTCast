@@ -68,6 +68,14 @@
     border-color: var(--border-strong);
   }
 
+  /* A toggle that is currently on. Colour alone would not do it — aria-pressed carries the
+     state for anyone not reading colour, and the filled icon carries it visually. */
+  .btn--active {
+    background: color-mix(in oklab, var(--accent) 16%, transparent);
+    border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+    color: var(--accent);
+  }
+
   /* ---- Icon-only. Square, and never below the tap-target floor. ---- */
   .btn--icon {
     min-width: var(--tap-target);

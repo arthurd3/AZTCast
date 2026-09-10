@@ -98,6 +98,29 @@ export async function listVideos() {
 }
 
 /**
+ * Marks a video to be kept past the retention window, or stops keeping it.
+ *
+ * Media is deleted automatically after the retention window, which is what stops a long-running
+ * instance filling its disk. This is the opt-out: a kept video lives until someone says otherwise.
+ *
+ * PUT and DELETE on a sub-resource rather than a POST verb, because the flag is a state to arrive
+ * at and not an event: calling either twice is the same as calling it once. Resolves to nothing —
+ * the API answers 204, and re-reading the listing is the caller's job.
+ */
+export async function setVideoKept(videoId, kept) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/videos/${encodeURIComponent(videoId)}/keep`,
+    {
+      method: kept ? 'PUT' : 'DELETE',
+    },
+  );
+  if (!response.ok) {
+    return handle(response);
+  }
+  return null;
+}
+
+/**
  * Unwraps a response, turning an RFC 9457 problem document into a readable Error.
  * The API returns application/problem+json for every failure.
  */

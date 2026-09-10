@@ -27,6 +27,8 @@ const PATHS = {
     'M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z',
   ],
   pip: ['M3 5.5h18v13H3z', 'M12.5 12h7v5h-7z'],
+  bookmark: ['M6.5 3.5h11v17l-5.5-4-5.5 4z'],
+  bookmarkOn: ['M6.5 3.5h11v17l-5.5-4-5.5 4z'],
   fullscreen: ['M8 3.5H3.5V8M16 3.5h4.5V8M8 20.5H3.5V16M16 20.5h4.5V16'],
   fullscreenExit: ['M3.5 8H8V3.5M20.5 8H16V3.5M3.5 16H8v4.5M20.5 16H16v4.5'],
   search: ['M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z', 'M16.2 16.2 21 21'],
@@ -39,7 +41,7 @@ const PATHS = {
 };
 
 /** Icons that read better as a filled shape than as a stroke. */
-const FILLED = new Set(['play', 'volumeHigh', 'volumeLow', 'volumeMute']);
+const FILLED = new Set(['play', 'volumeHigh', 'volumeLow', 'volumeMute', 'bookmarkOn']);
 
 /**
  * One icon, as an <svg>. Decorative by default — the control that holds it carries the label.
