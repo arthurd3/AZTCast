@@ -3,16 +3,20 @@ import { icon } from '../ui/icons.js';
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 /**
- * The quality and speed popover.
+ * The quality, subtitle and speed popover.
  *
  * Quality is only offered when there is a choice to make. On Safari's native HLS path there is
  * no hls.js and therefore no level list, so that group is left out entirely rather than shown
  * empty — the alternative is a menu that looks broken on exactly one browser.
  *
- * Built as a menu with radio semantics, because that is what it is: two groups, one checked
+ * Subtitles appear only when the stream carries some. ADR-0012 decided against a captions
+ * button on the grounds that nothing produced captions; the pipeline republishes the source's
+ * text tracks as WebVTT now, so the reason has gone and the control has not.
+ *
+ * Built as a menu with radio semantics, because that is what it is: groups with one checked
  * item each.
  */
-export function createSettingsMenu(video, { onSelectLevel, onOpenChange } = {}) {
+export function createSettingsMenu(video, { onSelectLevel, onSelectSubtitle, onOpenChange } = {}) {
   const element = document.createElement('div');
   element.className = 'menu';
 
@@ -35,6 +39,10 @@ export function createSettingsMenu(video, { onSelectLevel, onOpenChange } = {}) 
   let levels = [];
   /** -1 means automatic. */
   let currentLevel = -1;
+  /** Subtitle renditions, in master-playlist order. Empty when the stream carries none. */
+  let subtitles = [];
+  /** -1 means off, which is where it starts and where it stays until someone asks. */
+  let currentSubtitle = -1;
 
   function open() {
     panel.classList.remove('hidden');
@@ -123,6 +131,24 @@ export function createSettingsMenu(video, { onSelectLevel, onOpenChange } = {}) 
       sections.push(group('Qualidade', options));
     }
 
+    if (subtitles.length > 0) {
+      const options = [
+        item({
+          label: 'Desativadas',
+          checked: currentSubtitle === -1,
+          onSelect: () => onSelectSubtitle?.(-1),
+        }),
+        ...subtitles.map((track) =>
+          item({
+            label: track.label,
+            checked: currentSubtitle === track.id,
+            onSelect: () => onSelectSubtitle?.(track.id),
+          }),
+        ),
+      ];
+      sections.push(group('Legendas', options));
+    }
+
     sections.push(
       group(
         'Velocidade',
@@ -193,6 +219,15 @@ export function createSettingsMenu(video, { onSelectLevel, onOpenChange } = {}) 
       levels = nextLevels ?? [];
       currentLevel = active ?? -1;
       video.dataset.activeLevel = String(loading ?? active ?? -1);
+      if (!panel.classList.contains('hidden')) {
+        render();
+      }
+    },
+
+    /** Called whenever the stream's subtitle renditions or the selected one change. */
+    setSubtitles(tracks, active) {
+      subtitles = tracks ?? [];
+      currentSubtitle = active ?? -1;
       if (!panel.classList.contains('hidden')) {
         render();
       }

@@ -45,6 +45,7 @@ const controls = createControls(playerElement, videoElement, {
 const player = createHlsPlayer(videoElement, {
   onManifestParsed: () => {
     controls.setQuality(player.levels(), player.currentLevel(), player.loadLevel());
+    controls.setSubtitles(player.subtitleTracks(), player.currentSubtitleTrack());
     meta.render(player);
     status.hide();
     videoElement.play().catch(() => {
@@ -59,6 +60,9 @@ const player = createHlsPlayer(videoElement, {
       controls.announce(`Qualidade ${height}p`);
     }
   },
+  onSubtitlesChanged: () => {
+    controls.setSubtitles(player.subtitleTracks(), player.currentSubtitleTrack());
+  },
   onError: (message, kind) => {
     status.show(message, kind);
     if (kind === 'error') {
@@ -71,6 +75,11 @@ controls.onSelectLevel = (level) => {
   player.selectLevel(level);
   controls.setQuality(player.levels(), player.currentLevel(), player.loadLevel());
   meta.render(player);
+};
+
+controls.onSelectSubtitle = (id) => {
+  player.selectSubtitleTrack(id);
+  controls.setSubtitles(player.subtitleTracks(), player.currentSubtitleTrack());
 };
 
 function play() {

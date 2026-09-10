@@ -64,6 +64,7 @@ export function createControls(root, video, { onFullscreenChange } = {}) {
 
   const menu = createSettingsMenu(video, {
     onSelectLevel: (level) => options.onSelectLevel?.(level),
+    onSelectSubtitle: (id) => options.onSelectSubtitle?.(id),
     onOpenChange: (open) => {
       if (open) {
         markActive();
@@ -346,12 +347,22 @@ export function createControls(root, video, { onFullscreenChange } = {}) {
       menu.setQuality(levels, current, loading);
     },
 
+    /** Feeds the settings menu the subtitle renditions the stream advertises. */
+    setSubtitles(tracks, current) {
+      menu.setSubtitles(tracks, current);
+    },
+
     announce,
     markActive,
 
     /** Lets player.js hand the level-selection callback in after construction. */
     set onSelectLevel(handler) {
       options.onSelectLevel = handler;
+    },
+
+    /** Same, for subtitles. */
+    set onSelectSubtitle(handler) {
+      options.onSelectSubtitle = handler;
     },
 
     destroy() {

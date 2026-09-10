@@ -13,11 +13,17 @@ const STEPS = [
  * contain ffmpeg or tracker output, i.e. arbitrary text. The same reasoning is written down
  * in videoInfo.js.
  *
- * The percentage is shown for the download and nowhere else. The swarm reports pieces, so that
- * number is measured; ffmpeg reports nothing this pipeline reads, so transcoding shows no bar
- * rather than an invented one — an invented bar that stalls is worse than no bar. Elapsed time
- * carries every stage, computed from the job's own createdAt, which stays true even when the API
- * deduplicates onto an ingestion that started ten minutes ago.
+ * Both working stages now carry a percentage, and both are measured. The swarm reports pieces;
+ * ffmpeg reports `out_time_us` against the source duration. Transcoding used to show nothing here
+ * — deliberately, because an invented bar that stalls is worse than no bar — which left the
+ * longest stage of the pipeline looking identical whether it was working or wedged.
+ *
+ * They stay two separate fields on the wire. `progressPercent` means the download and only the
+ * download, which ADR-0013 made a contract with this client; reusing it would have the bar jump
+ * back to zero and climb a second time.
+ *
+ * Elapsed time carries every stage, computed from the job's own createdAt, which stays true even
+ * when the API deduplicates onto an ingestion that started ten minutes ago.
  */
 export function createJobProgress(container) {
   let ticker = null;
@@ -79,11 +85,12 @@ export function createJobProgress(container) {
       item.append(node, label);
 
       // Only against the step it actually measures, and only while that step is running: a
-      // percentage frozen at 100 next to "Transcodificando" would read as the transcode's own.
-      if (step.status === 'DOWNLOADING' && state === 'active' && hasPercent(job)) {
+      // percentage frozen at 100 next to "Transcodificando" is exactly what this used to show.
+      const stepPercent = state === 'active' ? percentFor(job, step.status) : null;
+      if (stepPercent !== null) {
         const percent = document.createElement('span');
         percent.className = 'job-step__percent';
-        percent.textContent = `${job.progressPercent}%`;
+        percent.textContent = `${stepPercent}%`;
         item.appendChild(percent);
       }
 
@@ -102,8 +109,9 @@ export function createJobProgress(container) {
 
     const children = [track];
 
-    if (job.status === 'DOWNLOADING' && hasPercent(job)) {
-      children.push(bar(job.progressPercent));
+    const activePercent = percentFor(job, job.status);
+    if (activePercent !== null) {
+      children.push(bar(activePercent, job.status));
     }
 
     if (job.status === 'FAILED' && job.failureReason) {
@@ -130,14 +138,17 @@ export function createJobProgress(container) {
    * A real progressbar role rather than a styled div: the width is the only thing a sighted
    * viewer reads, and without aria-valuenow there is nothing left for anyone else.
    */
-  function bar(percent) {
+  function bar(percent, status) {
     const track = document.createElement('div');
     track.className = 'job-progress__bar';
     track.setAttribute('role', 'progressbar');
     track.setAttribute('aria-valuenow', String(percent));
     track.setAttribute('aria-valuemin', '0');
     track.setAttribute('aria-valuemax', '100');
-    track.setAttribute('aria-label', 'Progresso do download');
+    track.setAttribute(
+      'aria-label',
+      status === 'TRANSCODING' ? 'Progresso da transcodificação' : 'Progresso do download',
+    );
 
     const fill = document.createElement('div');
     fill.className = 'job-progress__bar-fill';
@@ -174,9 +185,20 @@ export function createJobProgress(container) {
   return { render, clear };
 }
 
-/** Whether the API sent a usable percentage. Older builds of it did not send one at all. */
-function hasPercent(job) {
-  return Number.isFinite(job.progressPercent);
+/**
+ * The percentage that belongs to one stage, or null when there is none to show.
+ *
+ * Null rather than zero, and the distinction is load-bearing: `transcodePercent` is absent until
+ * the encode starts, so a zero would draw a full-width empty bar for a stage that has not begun.
+ * Older builds of the API send neither field, which lands in the same branch.
+ */
+function percentFor(job, status) {
+  const value = status === 'TRANSCODING' ? job.transcodePercent : job.progressPercent;
+  return status === 'DOWNLOADING' || status === 'TRANSCODING'
+    ? Number.isFinite(value)
+      ? value
+      : null
+    : null;
 }
 
 /** The video id with a copy button, because the next thing anyone does with it is copy it. */
