@@ -186,6 +186,33 @@ docker compose -f deploy/docker-compose.yml exec torrent-engine ls /var/lib/aztc
 docker compose -f deploy/docker-compose.yml exec torrent-engine getent hosts redis  # no such host
 ```
 
+## Transcode speed
+
+The ladder sizes its own thread budget from the machine
+([ADR-0033](decisions/0033-the-pipeline-sizes-itself-to-its-host.md)). Nothing to tune in the
+normal case; `aztcast.streaming.ffmpeg.encoder-threads` pins it if you disagree, and `0` restores
+ffmpeg's own behaviour.
+
+The number that matters is `cores / encoded rungs`. A 1080p H.264 source copies its top rung and
+encodes four, so a four-core host gives each rung two threads and a 32-thread host gives each
+twelve. Copied rungs cost nothing and are not counted.
+
+**A CPU limit is the case worth knowing about.** `docker run --cpus=2` sets `cpu.max`, which the JVM
+reads and x264 does not — x264 sizes itself from `sched_getaffinity`, which `--cpus` leaves alone.
+Before this was sized, a two-core container ran a workstation's worth of encoder threads and was
+then throttled onto two cores: 39.0s against 22.0s for the same ladder. If you want to constrain
+the container and have every part of it agree, `--cpuset-cpus` is the flag both respect.
+
+To measure your own host rather than trust the table:
+
+```bash
+./scripts/bench.sh --runs 3            # fetches a 1080p CC-BY clip once, then times the ladder
+./scripts/bench.sh --runs 3 --vmaf     # and scores each rung against the source
+```
+
+It reports `best` as well as `mean`, and `best` is the one to compare on: anything else running on
+the machine can only add time, never remove it.
+
 ## Torrent throughput
 
 The numbers that govern download speed are under

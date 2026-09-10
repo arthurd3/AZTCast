@@ -8,6 +8,7 @@
 #include <thread>
 
 #include <libtorrent/magnet_uri.hpp>
+#include <libtorrent/torrent_flags.hpp>
 #include <libtorrent/peer_info.hpp>
 #include <libtorrent/torrent_info.hpp>
 #include <libtorrent/torrent_status.hpp>
@@ -75,6 +76,16 @@ void Download::run() {
         return;
     }
     params.save_path = request_.target_dir;
+
+    // Peer exchange, off when asked. This used to be parsed, logged as "pex=off", and then not
+    // done -- the docker profile sets it for a stated privacy reason (PEX trades peer lists with
+    // everyone connected, broadcasting the swarm's membership further than the trackers already
+    // do) and the engine affirmed a property it was not delivering. A per-torrent flag rather than
+    // a session built without default plugins: same effect, and it keeps the setting where the
+    // rest of the per-download configuration already is.
+    if (request_.network.disable_peer_exchange) {
+        params.flags |= lt::torrent_flags::disable_pex;
+    }
     // Rarest-first is libtorrent's default and the right one here: sequential only pays when
     // something consumes partial data, and nothing does — the transcode starts after the last piece.
     lt::error_code add_error;
@@ -162,8 +173,27 @@ void Download::poll_progress() {
 }
 
 void Download::poll_peers() {
+    // Nobody is listening, so none of this is worth doing. The provider log is off by default,
+    // which binds the API's sink to a no-op lambda -- and the engine had no way to know, so it
+    // built every event, wrote every event, and the JVM parsed every event to hand it to a
+    // function that discards it. The client now says so in the start request.
+    if (!request_.peer_events) {
+        return;
+    }
+
+    std::string batch;
     std::vector<lt::peer_info> peers;
     handle_.get_peer_info(peers);
+
+    // Hoisted out of the loop below, where it used to sit. The piece count does not change once
+    // metadata has arrived, but it was being fetched once per peer per tick -- 200 calls every two
+    // seconds on a healthy swarm, all but a handful of them discarded unread. torrent_file() also
+    // returns a shared_ptr by value and may be a synchronous call into libtorrent's own network
+    // thread, which would mean the poller was contending with the transfer it exists to measure.
+    int pieces_total = 0;
+    if (auto info = handle_.torrent_file()) {
+        pieces_total = info->num_pieces();
+    }
 
     for (const lt::peer_info& peer : peers) {
         const std::string ip = peer.ip.address().to_string();
@@ -197,29 +227,46 @@ void Download::poll_peers() {
             }
         }
 
-        int pieces_total = 0;
-        if (auto info = handle_.torrent_file()) {
-            pieces_total = info->num_pieces();
+        // Nothing to say about this peer this tick, and most ticks say nothing about most peers.
+        // The `common` object below used to be built for every peer before this was checked, so a
+        // swarm sitting still still cost two hundred JSON constructions every two seconds.
+        if (!announce_connected && !announce_pieces && !announce_transfer) {
+            continue;
         }
 
         json common = {{"client", peer.client},
                        {"capabilities", capabilities_of(peer)}};
         if (announce_connected) {
-            emit_peer("CONNECTED", ip, port, common);
+            append_peer(batch, "CONNECTED", ip, port, common);
         }
         if (announce_pieces && pieces_total > 0) {
             json extra = common;
             extra["piecesComplete"] = pieces_complete;
             extra["piecesTotal"] = pieces_total;
-            emit_peer("BITFIELD", ip, port, extra);
+            append_peer(batch, "BITFIELD", ip, port, extra);
         }
         if (announce_transfer) {
             json extra = common;
             extra["bytesDownloaded"] = peer.total_download;
             extra["bytesUploaded"] = peer.total_upload;
-            emit_peer("TRANSFER", ip, port, extra);
+            append_peer(batch, "TRANSFER", ip, port, extra);
         }
     }
+
+    // One write for the whole tick rather than one per event.
+    conn_.send_lines(batch);
+}
+
+/** Serialises one peer event onto the tick's outgoing blob. */
+void Download::append_peer(
+        std::string& batch, const std::string& kind, const std::string& ip, int port, const json& extra) {
+    json message = extra;
+    message["type"] = "peer";
+    message["kind"] = kind;
+    message["ip"] = ip;
+    message["port"] = port;
+    batch += message.dump();
+    batch += '\n';
 }
 
 void Download::emit_peer(const std::string& kind, const std::string& ip, int port, const json& extra) {
@@ -232,6 +279,9 @@ void Download::emit_peer(const std::string& kind, const std::string& ip, int por
 }
 
 void Download::on_peer_connect(const std::string& ip, int port) {
+    if (!request_.peer_events) {
+        return;
+    }
     // DISCOVERED rather than CONNECTED, and the difference is worth stating: libtorrent reports the
     // moment it decides to dial a peer, which means the peer was named by a tracker, DHT or PEX and
     // is being acted on. CONNECTED is emitted by the poller once the peer actually appears in the
@@ -240,6 +290,9 @@ void Download::on_peer_connect(const std::string& ip, int port) {
 }
 
 void Download::on_peer_disconnect(const std::string& ip, int port) {
+    if (!request_.peer_events) {
+        return;
+    }
     const std::string key = endpoint_key(ip, port);
     json extra = json::object();
     {

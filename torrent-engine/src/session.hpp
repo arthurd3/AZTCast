@@ -33,6 +33,7 @@ struct NetworkSettings {
     int max_active_peer_connections_per_torrent = 60;
     int max_peer_connections = 600;
     int peers_per_tracker_request = 200;
+    int max_pending_connection_requests = 200;
     int tracker_timeout_seconds = 8;
 };
 

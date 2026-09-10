@@ -95,6 +95,16 @@ public class FfmpegCommandBuilder {
         // rung, already in H.264, needs one copied rung and no encoder at all.
         if (!encodedRungs.isEmpty()) {
             command.addAll(List.of("-filter_complex", filterGraph(encodedRungs)));
+            // One thread, and this is a property of the graph above rather than of the host. The
+            // cascade is strictly serial — each rung scales from the one before it — and ffmpeg
+            // already runs the whole graph on its own thread with every encoder on theirs, so
+            // frame-level pipelining exists without slice threading. Left to size itself it splits
+            // each scale across every core and pays a barrier per filter per frame for
+            // sub-microsecond work: 29% more CPU for 3% less speed.
+            //
+            // If filterGraph() ever emits parallel scalers from one split — the shape ADR-0018
+            // replaced — this needs measuring again.
+            command.addAll(List.of("-filter_complex_threads", "1"));
         }
 
         int encodedIndex = 0;
@@ -106,7 +116,8 @@ public class FfmpegCommandBuilder {
                 command.addAll(List.of("-map", "0:v:0", "-c:v:" + i, "copy"));
                 continue;
             }
-            command.addAll(videoArgs(planned.rendition(), i, encodedIndex, encoder, plan.framesPerSegment()));
+            command.addAll(videoArgs(
+                    planned.rendition(), i, encodedIndex, encoder, plan.framesPerSegment(), plan.threadsPerRung()));
             encodedIndex++;
         }
 
@@ -142,7 +153,12 @@ public class FfmpegCommandBuilder {
      * copied rung, where there is no encoder to obey them.
      */
     private List<String> videoArgs(
-            HlsRendition rendition, int outputIndex, int filterIndex, EncoderChoice encoder, int framesPerSegment) {
+            HlsRendition rendition,
+            int outputIndex,
+            int filterIndex,
+            EncoderChoice encoder,
+            int framesPerSegment,
+            int threadsPerRung) {
         List<String> args = new ArrayList<>(List.of(
                 "-map", "[v%dout]".formatted(filterIndex),
                 "-c:v:" + outputIndex, encoder.name(),
@@ -151,10 +167,27 @@ public class FfmpegCommandBuilder {
                 "-profile:v:" + outputIndex, "main",
                 "-b:v:" + outputIndex, kbps(rendition.videoBitrateKbps()),
                 "-maxrate:v:" + outputIndex, kbps(rendition.maxrateKbps()),
-                "-bufsize:v:" + outputIndex, kbps(rendition.bufsizeKbps())));
+                "-bufsize:v:" + outputIndex, kbps(rendition.bufsizeKbps()),
+                // Pinned, and it is a fix rather than a tidy-up. Nothing set an output pixel format
+                // before, so it was whatever the decoder and swscale negotiated -- which for a
+                // 10-bit HEVC source is yuv420p10le, and libx264 then encodes High 10. That
+                // contradicts the "main" profile two lines up, and the ladder either fails or
+                // advertises a CODECS string no browser will touch. Every rung here is 8-bit H.264
+                // by definition, so it should say so.
+                "-pix_fmt:v:" + outputIndex, "yuv420p"));
 
         if (encoder.hasPreset()) {
             args.addAll(List.of("-preset:v:" + outputIndex, encoder.preset()));
+        }
+
+        // Per output stream, because aimed globally it would also hit the copied rung — and because
+        // the useful number is different for each: x264 caps its own thread count at half the
+        // picture's macroblock rows, and an explicit -threads bypasses that cap rather than
+        // respecting it. Left uncapped, a 240p rung asked for eight frame threads would get eight
+        // frames of latency and eight frame buffers to divide fifteen rows of macroblocks between.
+        if (threadsPerRung > 0) {
+            int rows = (int) Math.ceil(rendition.height() / 16.0) / 2;
+            args.addAll(List.of("-threads:v:" + outputIndex, String.valueOf(Math.max(1, Math.min(threadsPerRung, rows)))));
         }
 
         // Keyframes by time is the authority, because the source is an arbitrary torrent and may
@@ -165,12 +198,17 @@ public class FfmpegCommandBuilder {
         // -g and -keyint_min are the belt to that brace, and only emitted when the frame rate was
         // actually reported. They do not change where segments break — the muxer cuts at the first
         // keyframe at or after hls_time either way — but they cap the GOP so an encoder cannot run
-        // hundreds of frames between keyframes inside one segment, and they stop it inventing
-        // scene-change keyframes that cost bitrate and buy nothing at these rung sizes.
+        // hundreds of frames between keyframes inside one segment.
+        //
+        // They do NOT stop scene-change keyframes, which this comment used to claim. That is
+        // -sc_threshold, and its absence meant the encoder inserted an extra keyframe on every cut
+        // — costing bitrate at rungs where bitrate is the scarce thing, and buying nothing, because
+        // -force_key_frames above already guarantees a keyframe wherever a segment needs one.
         if (framesPerSegment > 0) {
             args.addAll(List.of(
                     "-g:v:" + outputIndex, String.valueOf(framesPerSegment),
-                    "-keyint_min:v:" + outputIndex, String.valueOf(framesPerSegment)));
+                    "-keyint_min:v:" + outputIndex, String.valueOf(framesPerSegment),
+                    "-sc_threshold:v:" + outputIndex, "0"));
         }
         return args;
     }

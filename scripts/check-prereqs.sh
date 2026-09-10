@@ -25,6 +25,26 @@ check npm     npm     "ships with Node"
 check ffmpeg  ffmpeg  "install ffmpeg — the API shells out to it for every transcode"
 check ffprobe ffprobe "ships with ffmpeg"
 
+# Docker is deliberately not a `check`, because a missing one is not a failure here.
+# `make dev` runs the API and the player directly and needs none of it. What it costs is
+# the container stack and the sandboxed torrent engine, which is where acquisition actually
+# runs in anger -- so this says what is unavailable rather than that something is wrong.
+#
+# `docker info` rather than `docker --version`: installed-but-not-running is the more common
+# state and the one that produces a baffling failure three minutes into `make up`.
+if command -v docker >/dev/null 2>&1; then
+  if docker info >/dev/null 2>&1; then
+    printf '  \033[32m✓\033[0m %-8s %s\n' docker "$(docker --version 2>&1 | head -1)"
+  else
+    printf '  \033[33m!\033[0m %-8s installed, but the daemon is not reachable\n' docker
+    printf '    `make dev` is unaffected. `make up` and `make engine` need it running.\n'
+  fi
+else
+  printf '  \033[33m!\033[0m %-8s not installed\n' docker
+  printf '    `make dev` is unaffected. Without it there is no container stack and no\n'
+  printf '    sandboxed torrent engine — acquisition falls back to the in-JVM client.\n'
+fi
+
 # What ffmpeg can actually do matters as much as whether it exists, and the half
 # that used to be checked was the wrong half. This script only ever looked for an
 # H.264 *encoder*. The failure that shipped was a missing E-AC-3 *decoder* — the

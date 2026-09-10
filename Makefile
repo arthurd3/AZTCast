@@ -8,7 +8,7 @@ COMPOSE := docker compose -f deploy/docker-compose.yml
 export FORCE_PORTS
 
 .DEFAULT_GOAL := help
-.PHONY: help check dev dev-down api web build test lint format up down logs clean
+.PHONY: help check dev dev-down api web build engine test bench lint format up down logs clean
 
 help: ## List available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -33,8 +33,20 @@ build: ## Build both applications
 	cd streaming-api && ./mvnw -B clean package
 	cd web-player && npm ci && npm run build
 
+# Not part of `build` or `test`, deliberately. The engine needs libtorrent, which is
+# packaged on Debian and not everywhere, so it builds in its container rather than on
+# a contributor's machine — and `make test` stays runnable by someone who never touches
+# it. Until this target existed the only way to find out whether the C++ still compiled
+# was to run all of `make up`.
+engine: ## Build the sandboxed torrent engine image (needs Docker)
+	docker build -t aztcast/torrent-engine:dev torrent-engine
+
 test: ## Run the API test suite, including the ArchUnit rules
 	cd streaming-api && ./mvnw -B clean verify
+
+# ARGS is forwarded, so: make bench ARGS="--vmaf --runs 5"
+bench: ## Measure a transcode ladder on this machine (ARGS="--vmaf")
+	@./scripts/bench.sh $(ARGS)
 
 lint: ## Lint and format-check the player
 	cd web-player && npx eslint . && npx prettier --check .
@@ -53,4 +65,4 @@ logs: ## Follow container logs
 
 clean: ## Remove build output and downloaded media
 	cd streaming-api && ./mvnw -B -q clean
-	rm -rf streaming-api/var web-player/dist web-player/node_modules
+	rm -rf streaming-api/var web-player/dist web-player/node_modules torrent-engine/build

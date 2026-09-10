@@ -68,6 +68,23 @@ aztcast:
       # actually defines the option.
       preset: auto
 
+      # How many threads each encoded rung gets. `auto` divides a budget across the ladder from
+      # what this machine actually has; a number pins it; 0 restores ffmpeg's own behaviour, where
+      # every encoder sizes itself against the whole box and knows nothing about the others.
+      #
+      # That default is fine on a workstation and badly wrong anywhere smaller -- a four-rung ladder
+      # in a two-core container ran twelve encoder threads on two cores and spent more time
+      # switching between them than encoding. Measured, same source, same rungs:
+      #
+      #   cores    default   auto     gain
+      #      2      39.0s    22.0s    1.77x
+      #      4      20.3s    10.8s    1.88x
+      #     32       4.3s     4.3s      -
+      #
+      # The workstation being a draw is the point: there was no throughput being lost there. This
+      # exists so the same code is not badly wrong on a laptop. See ADR-0033.
+      encoder-threads: auto
+
       timeout: 30m
       segment-duration: 4s
 

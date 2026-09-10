@@ -99,6 +99,13 @@ make dev          # API on :8080, player on :5173
 make dev-down     # stop a leftover run still holding those ports
 ```
 
+`make dev` runs the BitTorrent client **inside the JVM**, and says so when it
+starts. That is the one thing the containers do differently: `make up` runs the
+sandboxed engine instead — its own user, no capabilities, one writable directory
+([ADR-0032](docs/decisions/0032-the-swarm-runs-in-a-process-of-its-own.md)). The
+local default needs nothing installed, which is why it is the default; everything
+else about the two is the same.
+
 `make dev` clears whatever a previous run left behind before it starts, so a
 session that crashed does not block the next one. It only ever signals processes
 belonging to this checkout: if something else holds :8080 or :5173 it names the
@@ -475,6 +482,8 @@ stays `UP` so nothing restarts mid-transcode, while `/actuator/health` reports
 
 ```bash
 make test         # unit tests, @WebMvcTest slices and the ArchUnit rules
+make engine       # build the sandboxed torrent engine (C++, needs Docker)
+make bench        # time a transcode ladder here; ARGS="--vmaf" scores each rung
 make lint         # eslint + prettier on the player
 make build        # both applications
 ./scripts/smoke-test.sh

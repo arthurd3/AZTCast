@@ -72,8 +72,8 @@ export function createVideoLibrary(
 
   function skeleton() {
     const cards = Array.from({ length: SKELETON_COUNT }, () => {
-      const card = document.createElement('div');
-      card.className = 'skeleton-card';
+      const item = document.createElement('div');
+      item.className = 'skeleton-card';
 
       const thumb = document.createElement('div');
       thumb.className = 'skeleton skeleton-card__thumb';
@@ -84,8 +84,8 @@ export function createVideoLibrary(
       const short = document.createElement('div');
       short.className = 'skeleton skeleton-card__line skeleton-card__line--short';
 
-      card.append(thumb, line, short);
-      return card;
+      item.append(thumb, line, short);
+      return item;
     });
     container.replaceChildren(...cards);
     // The grid is a live region for the count, but eight shimmering boxes are not news.
@@ -175,8 +175,8 @@ export function createVideoLibrary(
     function paint(kept) {
       toggle.classList.toggle('video-card__keep--on', kept);
       toggle.setAttribute('aria-pressed', kept ? 'true' : 'false');
-      const label = kept ? 'Remover dos salvos' : 'Salvar vídeo';
-      toggle.setAttribute('aria-label', label);
+      const text = kept ? 'Remover dos salvos' : 'Salvar vídeo';
+      toggle.setAttribute('aria-label', text);
       toggle.title = kept ? 'Salvo — a exclusão pede confirmação' : 'Salvar';
       toggle.replaceChildren(icon(kept ? 'bookmarkOn' : 'bookmark', 'video-card__keep-icon'));
     }
@@ -228,8 +228,9 @@ export function createVideoLibrary(
 
     function paint() {
       toggle.classList.toggle('video-card__delete--armed', armed);
-      const label = armed ? `Confirmar exclusão de ${label(video)}` : `Excluir ${label(video)}`;
-      toggle.setAttribute('aria-label', label);
+      const name = label(video);
+      const text = armed ? `Confirmar exclusão de ${name}` : `Excluir ${name}`;
+      toggle.setAttribute('aria-label', text);
       toggle.title = armed ? 'Clique de novo para excluir' : 'Excluir';
       toggle.replaceChildren(icon(armed ? 'check' : 'trash', 'video-card__delete-icon'));
     }

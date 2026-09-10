@@ -242,6 +242,73 @@ class FfmpegCommandBuilderTest {
     }
 
     @Test
+    @DisplayName("the thread budget reaches each encoded rung, and the copied one gets none")
+    void emitsThePerRungThreadBudget() {
+        List<String> command = builder.build(
+                Path.of("/in/movie.mkv"),
+                OUT,
+                new TranscodePlan(LADDER, AudioPlan.encode(STEREO_AAC, "aac", AUDIO), List.of(), 96, 6),
+                LIBX264);
+
+        assertThat(valueOf(command, "-threads:v:0")).isEqualTo("6");
+        // Per stream rather than global: aimed globally it would also hit a copied rung, which is
+        // a remux and has nothing to thread.
+        assertThat(command).doesNotContain("-threads");
+    }
+
+    @Test
+    @DisplayName("a small rung gets x264's height cap back, which an explicit -threads removes")
+    void reappliesTheHeightCapExplicitThreadsBypasses() {
+        // x264 caps its own thread count at half the picture's macroblock rows — but only on the
+        // auto path. Passing a number silently drops that protection, so a 240p rung (15 rows of
+        // macroblocks) asked for eight frame threads would get eight frames of latency and eight
+        // frame buffers to divide fifteen rows between.
+        List<String> command = builder.build(
+                Path.of("/in/movie.mkv"),
+                OUT,
+                new TranscodePlan(LADDER, AudioPlan.encode(STEREO_AAC, "aac", AUDIO), List.of(), 96, 8),
+                LIBX264);
+
+        assertThat(valueOf(command, "-threads:v:0")).isEqualTo("8");
+        assertThat(Integer.parseInt(valueOf(command, "-threads:v:1"))).isLessThan(8);
+    }
+
+    @Test
+    @DisplayName("zero threads means ffmpeg decides, and no flag is emitted at all")
+    void omitsTheFlagWhenSizingIsLeftToFfmpeg() {
+        assertThat(command()).noneMatch(arg -> arg.startsWith("-threads"));
+    }
+
+    @Test
+    @DisplayName("the serial cascade is filtered on one thread")
+    void filtersOnOneThread() {
+        // A property of the graph, not of the host: each rung scales from the one above it, so
+        // slice-threading each scale across every core buys barriers rather than speed.
+        assertThat(valueOf(command(), "-filter_complex_threads")).isEqualTo("1");
+    }
+
+    @Test
+    @DisplayName("every encoded rung is pinned to 8-bit, whatever the source decoded to")
+    void pinsThePixelFormat() {
+        // Nothing set an output pixel format before, so it was whatever the decoder and swscale
+        // negotiated. A 10-bit HEVC source gives yuv420p10le, libx264 then encodes High 10, and
+        // that contradicts the "main" profile emitted beside it — a ladder that either fails or
+        // advertises a CODECS string no browser will play.
+        assertThat(valueOf(command(), "-pix_fmt:v:0")).isEqualTo("yuv420p");
+        assertThat(valueOf(command(), "-pix_fmt:v:1")).isEqualTo("yuv420p");
+    }
+
+    @Test
+    @DisplayName("scene-change keyframes are off, which -g never did")
+    void suppressesSceneChangeKeyframes() {
+        // -force_key_frames already guarantees a keyframe wherever a segment boundary needs one,
+        // so a second one on every cut is bitrate spent for nothing at these rung sizes. -g and
+        // -keyint_min cap the GOP; they have never suppressed scenecut, though the comment beside
+        // them used to say they did.
+        assertThat(valueOf(command(), "-sc_threshold:v:0")).isEqualTo("0");
+    }
+
+    @Test
     @DisplayName("omits the filter graph entirely when every rung is copied")
     void copyOnlyLadderHasNoFilterGraph() {
         // Reachable: an H.264 source shorter than the shortest configured rung needs one copied

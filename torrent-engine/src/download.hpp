@@ -20,6 +20,7 @@ struct StartRequest {
     std::string magnet;
     std::string target_dir;
     bool video_only = true;
+    bool peer_events = true;
     std::vector<std::string> video_extensions;
     int timeout_seconds = 7200;
     NetworkSettings network;
@@ -59,6 +60,8 @@ private:
     };
 
     void emit_peer(const std::string& kind, const std::string& ip, int port, const json& extra);
+    static void append_peer(
+            std::string& batch, const std::string& kind, const std::string& ip, int port, const json& extra);
     void poll_peers();
     void poll_progress();
     void choose_files();

@@ -13,7 +13,7 @@ editing it.
 | [0005](0005-ffmpeg-as-an-out-of-process-port.md)            | ffmpeg stays an out-of-process port             | Accepted |
 | [0006](0006-deprecate-the-legacy-download-endpoint.md)      | Deprecate rather than change the legacy endpoint| Accepted |
 | [0007](0007-nginx-serves-the-bytes.md)                      | nginx serves the bytes; the API authorises      | Accepted |
-| [0008](0008-cmaf-ladder-in-one-pass.md)                     | A CMAF ladder, keyframe-aligned, in one pass    | Accepted |
+| [0008](0008-cmaf-ladder-in-one-pass.md)                     | A CMAF ladder, keyframe-aligned, in one pass    | Superseded in part by [0033](0033-the-pipeline-sizes-itself-to-its-host.md) |
 | [0009](0009-redis-for-state-not-for-media.md)               | Redis for state and coordination, not media     | Accepted |
 | [0010](0010-the-player-drives-ingestion.md)                 | The player drives ingestion                     | Superseded in part by [0011](0011-the-library-replaces-manual-id-entry.md) |
 | [0011](0011-the-library-replaces-manual-id-entry.md)        | The library replaces manual videoId entry       | Extended by [0013](0013-an-ingestion-survives-the-page-that-started-it.md) |
@@ -38,3 +38,4 @@ editing it.
 | [0030](0030-the-library-is-not-a-cache.md) | The library is not a cache | Supersedes part of [0019](0019-kept-videos-outlive-the-retention-window.md); amends [0003](0003-filesystem-as-the-store.md), [0009](0009-redis-for-state-not-for-media.md) |
 | [0031](0031-only-the-swarm-faces-outward.md) | Only the swarm faces outward | Refines [0015](0015-ip-masking-belongs-to-the-network.md); refined by [0032](0032-the-swarm-runs-in-a-process-of-its-own.md) |
 | [0032](0032-the-swarm-runs-in-a-process-of-its-own.md) | The swarm runs in a process of its own | Supersedes [0023](0023-the-bittorrent-runtime-outlives-its-clients.md); refines [0015](0015-ip-masking-belongs-to-the-network.md), [0031](0031-only-the-swarm-faces-outward.md) |
+| [0033](0033-the-pipeline-sizes-itself-to-its-host.md) | The pipeline sizes itself to its host | Supersedes part of [0008](0008-cmaf-ladder-in-one-pass.md) |
