@@ -121,6 +121,23 @@ export async function setVideoKept(videoId, kept) {
 }
 
 /**
+ * Asks the API to put a video that stopped working back together.
+ *
+ * POST rather than PUT, because this is not a state to arrive at: what it costs depends on what is
+ * wrong, from rewriting a playlist to fetching the torrent again. Resolves to `{ videoId, action,
+ * detail }` — the action is what matters, because two of the four are asynchronous and one of those
+ * takes minutes. The id never changes, which is the whole point of repairing rather than
+ * re-ingesting: the link a viewer already has keeps working.
+ */
+export async function repairVideo(videoId) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/videos/${encodeURIComponent(videoId)}/repair`,
+    { method: 'POST' },
+  );
+  return handle(response);
+}
+
+/**
  * Unwraps a response, turning an RFC 9457 problem document into a readable Error.
  * The API returns application/problem+json for every failure.
  */

@@ -1,5 +1,6 @@
 import './styles/main.css';
-import { findVideo, masterPlaylistUrl, playerPageUrl } from './api/streamClient.js';
+import { findVideo, masterPlaylistUrl, playerPageUrl, repairVideo } from './api/streamClient.js';
+import { pollJob } from './api/jobPoller.js';
 import { createControls } from './player/controls.js';
 import { createAmbientGlow } from './player/ambientGlow.js';
 import { createHlsPlayer } from './player/hlsPlayer.js';
@@ -63,8 +64,12 @@ const player = createHlsPlayer(videoElement, {
   onSubtitlesChanged: () => {
     controls.setSubtitles(player.subtitleTracks(), player.currentSubtitleTrack());
   },
-  onError: (message, kind) => {
-    status.show(message, kind);
+  onError: (message, kind, cause) => {
+    // Only a network failure is worth offering to repair: it is what a ladder that lost segments
+    // looks like from the browser. A codec the browser lacks is not something the server can fix,
+    // and a button there would misdescribe the problem.
+    const offer = cause === 'network' ? { label: 'Reparar', onSelect: startRepair } : null;
+    status.show(message, kind, offer);
     if (kind === 'error') {
       controls.announce(message);
     }
@@ -81,6 +86,39 @@ controls.onSelectSubtitle = (id) => {
   player.selectSubtitleTrack(id);
   controls.setSubtitles(player.subtitleTracks(), player.currentSubtitleTrack());
 };
+
+/**
+ * Asks the API to rebuild this video, and follows it until it is playable again.
+ *
+ * The id never changes, so there is nothing to navigate to — when the repair finishes, the same
+ * page reloads against the same link. That is the whole point of repairing rather than
+ * re-ingesting: a bookmark, a library card and a viewer's tab all keep working.
+ */
+async function startRepair() {
+  status.show('Verificando este vídeo…', 'loading');
+  let outcome;
+  try {
+    outcome = await repairVideo(videoId);
+  } catch (error) {
+    status.show(error.message, 'error');
+    return;
+  }
+
+  if (outcome.action === 'NOTHING_TO_DO') {
+    // Nothing was wrong with the ladder, so whatever went wrong was on the way here. Trying again
+    // is the only useful thing left to offer.
+    status.show(outcome.detail, 'error', { label: 'Tentar de novo', onSelect: () => play() });
+    return;
+  }
+
+  status.show(outcome.detail, 'loading');
+  try {
+    await pollJob(videoId).promise;
+    window.location.reload();
+  } catch (error) {
+    status.show(`O reparo falhou: ${error.message}`, 'error');
+  }
+}
 
 function play() {
   const masterUrl = masterPlaylistUrl(videoId);
