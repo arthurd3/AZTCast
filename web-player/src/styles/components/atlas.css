@@ -68,6 +68,57 @@
     word-break: break-all;
   }
 
+  /* Value and its toggle on one line, with the value taking the slack so the eye sits at the end. */
+  .atlas__self {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .atlas__self .atlas__stat-value {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /*
+   * 44x44 of hit area inside a line about 24px tall. The negative block margin pulls the *margin*
+   * box back to the line while the border box — which is what a pointer is measured against —
+   * stays at the tap-target floor. Without it the tile grows, and grid's default align-items:
+   * stretch drags every other tile in the same row up with it. Not .btn--sm: that is 44x32 and
+   * misses the 44x44 floor.
+   */
+  .atlas__self-toggle {
+    flex: none;
+    margin-block: -0.625rem;
+    color: var(--accent);
+  }
+
+  /*
+   * Masked reads as withheld on purpose rather than as a value. Unselectable because twelve
+   * bullets on the clipboard would look like a copied address.
+   */
+  .atlas__stat--self .atlas__stat-value.is-masked {
+    color: color-mix(in oklab, var(--accent) 60%, var(--text));
+    letter-spacing: 0.15em;
+    user-select: none;
+  }
+
+  /*
+   * Lifted off pure --accent because this is --text-xs on the tile's accent tint, not on
+   * --surface: measured, the raw accent lands at 4.19:1 there and small text needs 4.5. The
+   * mix keeps it reading as accent at 5.0:1. The underline carries the affordance either way.
+   */
+  .atlas__stat-link {
+    font-size: var(--text-xs);
+    color: color-mix(in oklab, var(--accent) 70%, var(--text));
+    text-underline-offset: 0.2em;
+  }
+
+  .atlas__stat-link:hover {
+    color: var(--text);
+  }
+
   /* ---- The map ---- */
 
   .atlas {

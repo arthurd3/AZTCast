@@ -8,6 +8,7 @@ import {
 import { formatBytes, relativeTime } from './ui/format.js';
 import { mountCosmos } from './ui/cosmos.js';
 import { peerSummaryText, renderPeerTable } from './ui/providerPeers.js';
+import { renderSelfAddress } from './ui/selfAddress.js';
 import { createStatusBanner } from './ui/statusBanner.js';
 import { createWorldMap } from './ui/worldMap.js';
 
@@ -90,9 +91,10 @@ function renderTotals(summary) {
   }
 
   // The one fact here that is about us rather than about them, and the only direct evidence
-  // available of whether outbound traffic is masked: a remote peer reporting what it saw.
+  // available of whether outbound traffic is masked: a remote peer reporting what it saw. It is
+  // also the only value on the page that identifies the reader, so it arrives masked — ADR-0029.
   if (summary.addressPeersSee) {
-    entries.push(stat(summary.addressPeersSee, 'como os pares te veem', 'atlas__stat--self'));
+    entries.push(renderSelfAddress(summary.addressPeersSee));
   }
 
   totalsElement.replaceChildren(...entries);
