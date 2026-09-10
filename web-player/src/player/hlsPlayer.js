@@ -12,6 +12,20 @@ import Hls from 'hls.js';
 const MAX_MEDIA_RECOVERIES = 2;
 const MAX_NETWORK_RECOVERIES = 3;
 
+/**
+ * Media errors that no amount of retrying will fix.
+ *
+ * `recoverMediaError()` re-creates the SourceBuffers and re-appends. That helps a decoder that
+ * choked on a fragment. It cannot install a codec the browser does not have — so retrying
+ * `manifestIncompatibleCodecsError` spends two rounds showing "recuperando (1/2)…" before
+ * arriving at the message that was true from the first frame.
+ *
+ * This is what a ladder carrying E-AC-3 audio looks like in Chrome: the CODECS attribute
+ * describes the whole variant, so `avc1.640028,ec-3` is unsupported even though the video half
+ * is fine, hls.js filters away every rung and is left with none.
+ */
+const PERMANENT_MEDIA_ERRORS = new Set(['manifestIncompatibleCodecsError']);
+
 /** Wraps hls.js (or Safari's native HLS) behind one small interface. */
 export function createHlsPlayer(
   videoElement,
@@ -40,11 +54,20 @@ export function createHlsPlayer(
           hls.startLoad();
           return;
         }
-        onError('Erro de rede. Verifique sua conexão e tente novamente.', 'error');
+        // Named so the page can offer to repair. A segment that 404s is what a ladder missing
+        // media looks like from out here, and it is the one failure a repair can fix.
+        onError('Erro de rede. Verifique sua conexão, ou repare este vídeo.', 'error', 'network');
         destroy();
         return;
 
       case Hls.ErrorTypes.MEDIA_ERROR:
+        if (PERMANENT_MEDIA_ERRORS.has(data.details)) {
+          // Deliberately no repair offer: there is nothing on the server to fix, and offering
+          // one would be lying about the cause.
+          onError(unplayableMessage(data), 'error', 'codec');
+          destroy();
+          return;
+        }
         if (mediaRecoveries < MAX_MEDIA_RECOVERIES) {
           mediaRecoveries += 1;
           onError(
@@ -70,6 +93,18 @@ export function createHlsPlayer(
         onError('Erro fatal no streaming.', 'error');
         destroy();
     }
+  }
+
+  /**
+   * Names the codec the browser refused, when hls.js tells us which one it was.
+   *
+   * `data.reason` carries the offending CODECS string; without it the generic sentence is still
+   * more useful than "erro de mídia", because it points at the one cause this error has.
+   */
+  function unplayableMessage(data) {
+    const codecs = typeof data.reason === 'string' ? data.reason.match(/[\w.-]+/g) : null;
+    const named = codecs && codecs.length > 0 ? ` (${codecs.join(', ')})` : '';
+    return `Este navegador não suporta os codecs deste vídeo${named}. Tente o Safari, ou reingerir a origem em um servidor com o decodificador correspondente.`;
   }
 
   return {
