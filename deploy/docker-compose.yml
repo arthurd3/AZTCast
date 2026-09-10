@@ -29,18 +29,20 @@ services:
     image: aztcast/streaming-api:dev
     environment:
       SPRING_PROFILES_ACTIVE: docker
-    # Incoming peer connections. Without a published port the client is outbound-only:
-    # it can dial peers but no peer can dial it, which loses every peer that is itself
-    # behind a NAT it cannot escape. Reaching this from outside still needs the host's
-    # own router to forward it; publishing is the half that is this file's business.
-    ports:
-      - "${TORRENT_PORT:-6891}:6891/tcp"
-      - "${TORRENT_PORT:-6891}:6891/udp"
+    # No ports. The peer port moved to torrent-engine below, which is the whole point of
+    # this stack's shape now: the process that talks to strangers and the process that
+    # serves you are not the same process (ADR-0032).
     volumes:
       - media:/var/lib/aztcast
+      # The engine's control socket. A directory rather than the socket file, because the
+      # engine creates the file at startup and a bind of a not-yet-existing path would be a
+      # directory on both sides.
+      - engine-socket:/run/aztcast
     depends_on:
       redis:
         condition: service_healthy
+      torrent-engine:
+        condition: service_started
     # Sized for the JVM plus concurrent ffmpeg processes. ffmpeg's memory is
     # outside the heap, and the pool's max-size is how many can run at once —
     # raise both together or the container gets OOM-killed (exit 137).
@@ -54,6 +56,61 @@ services:
       timeout: 5s
       retries: 3
       start_period: 40s
+    restart: unless-stopped
+
+  # Everything that talks to strangers, and nothing else.
+  #
+  # The API used to run its BitTorrent client in-process, which meant bytes from unknown peers
+  # were parsed by the same JVM that holds the media root, the job store and the provider
+  # database. This is that work moved out and then boxed in: its own user, its own network, no
+  # capabilities, a read-only image, and write access to exactly one directory.
+  #
+  # Losing it costs downloads and nothing else. The library keeps serving, which is the trade
+  # the VPN overlay could not make while acquisition lived inside the API.
+  torrent-engine:
+    build:
+      context: ../torrent-engine
+    image: aztcast/torrent-engine:dev
+    # Incoming peer connections. Without a published port the client is outbound-only: it can
+    # dial peers but no peer can dial it, which loses every peer that is itself behind a NAT it
+    # cannot escape. Reaching this from outside still needs the host's own router to forward it;
+    # publishing is the half that is this file's business.
+    #
+    # This is the one port in the stack meant to face the internet, and it is now the only
+    # thing on the far side of it.
+    ports:
+      - "${TORRENT_PORT:-6891}:6891/tcp"
+      - "${TORRENT_PORT:-6891}:6891/udp"
+    volumes:
+      - engine-socket:/run/aztcast
+      # Only downloads/, never the HLS root. The finished ladder is what viewers watch and the
+      # engine has no reason to reach it, so a subpath mount is the difference between "it does
+      # not write there" and "it cannot".
+      - type: volume
+        source: media
+        target: /var/lib/aztcast/downloads
+        volume:
+          subpath: downloads
+    networks:
+      # Its own network, and the reason is Redis. On the default network this container could
+      # open a connection to the job store; here there is nothing to reach but the internet it
+      # actually needs. The API is not on this network either — the two talk over the Unix
+      # socket above, which is a filesystem object with a mode on it rather than an address
+      # anything can dial.
+      - swarm
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # The image is immutable at runtime. The two volumes above stay writable, which is the only
+    # writing this process has any business doing.
+    read_only: true
+    deploy:
+      resources:
+        limits:
+          # libtorrent's buffers and nothing else lives here. Peer connections cost about a
+          # megabyte each, so this and max-peer-connections move together.
+          memory: 1g
     restart: unless-stopped
 
   web-player:
@@ -85,6 +142,17 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+networks:
+  # The default network carries the API, Redis and nginx. `swarm` carries the torrent engine and
+  # nothing else, so the isolation above is a fact about the network rather than a promise about
+  # the code.
+  default:
+  swarm:
+
 volumes:
+  # Holds one socket file, created at startup and gone with the container. A named volume rather
+  # than a host path, so nothing on the host reaches the engine's control surface without going
+  # through Docker.
+  engine-socket:
   # Downloads and HLS output. Regenerable, but large — delete it deliberately.
   media:
