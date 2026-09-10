@@ -48,7 +48,17 @@ public class BtRuntimeConfiguration {
     public BtRuntime btRuntime(Config btConfig, List<Module> btModules, StreamingProperties properties) {
         StreamingProperties.Network network = properties.torrent().network();
 
-        var builder = BtRuntime.builder(btConfig).autoLoadModules();
+        // Without this the runtime is not actually shared. BtClient.stop() calls
+        // BtRuntime.detachClient, which tears down the *whole* runtime as soon as the last client
+        // detaches — so the first download to finish shut down the DHT node, the peer registry and
+        // the connection acceptor that every later download depends on. It is the source of the
+        // RejectedExecutionException storm from bt.peer.peer-collector at the end of a download,
+        // and of the second ingestion in a process being quietly degraded: DefaultClient sees a
+        // stopped runtime and restarts it, which re-runs the startup hooks against Guice singletons
+        // whose executors were already shutdownNow()n. Nothing throws. It simply does not work.
+        //
+        // Spring owns the shutdown, as the javadoc above says it should.
+        var builder = BtRuntime.builder(btConfig).autoLoadModules().disableAutomaticShutdown();
         btModules.forEach(builder::module);
 
         // Both are on by default in the library and are only reachable from this builder — which is
@@ -64,7 +74,8 @@ public class BtRuntimeConfiguration {
         // tuned runtime from a defaulted one except by watching a download and guessing.
         log.info(
                 "BitTorrent runtime: port={} encryption={} lsd={} pex={} bind={}"
-                        + " peers={}/torrent ({} active, {} global) pending={} trackerBatch={} ioQueue={}",
+                        + " peers={}/torrent ({} active, {} global) pending={} trackerBatch={} ioQueue={}"
+                        + " trackerTimeout={}",
                 btConfig.getAcceptorPort(),
                 btConfig.getEncryptionPolicy(),
                 network.disableLocalServiceDiscovery() ? "off" : "on",
@@ -75,7 +86,8 @@ public class BtRuntimeConfiguration {
                 btConfig.getMaxPeerConnections(),
                 btConfig.getMaxPendingConnectionRequests(),
                 btConfig.getNumberOfPeersToRequestFromTracker(),
-                btConfig.getMaxIOQueueSize());
+                btConfig.getMaxIOQueueSize(),
+                btConfig.getTrackerTimeout());
 
         return builder.build();
     }
@@ -109,9 +121,42 @@ public class BtRuntimeConfiguration {
         config.setNumberOfPeersToRequestFromTracker(network.peersPerTrackerRequest());
         config.setMaxIOQueueSize(network.maxIoQueueSize());
 
-        bindAddress(network.acceptorAddress()).ifPresent(config::setAcceptorAddress);
+        config.setTrackerTimeout(network.trackerTimeout());
+
+        resolveBindAddress(network.acceptorAddress()).ifPresent(choice -> {
+            config.setAcceptorAddress(choice.address());
+            log.info(
+                    "Binding BitTorrent to {} on {} — {}",
+                    choice.address().getHostAddress(),
+                    EgressInterface.interfaceNameOf(choice.address()),
+                    choice.reason());
+        });
 
         return config;
+    }
+
+    /**
+     * The address to bind to: what was configured, else what this host actually goes out on.
+     *
+     * <p>Empty only when neither is available, which leaves the library's own first-interface scan
+     * in place — the behaviour everything had before, rather than a startup failure.
+     */
+    private static Optional<EgressInterface.Choice> resolveBindAddress(String configured) {
+        Optional<InetAddress> explicit = bindAddress(configured);
+        if (explicit.isPresent()) {
+            return explicit.map(address -> new EgressInterface.Choice(address, "configured explicitly"));
+        }
+        Optional<EgressInterface.Choice> detected = EgressInterface.detect();
+        detected.ifPresent(choice -> {
+            if (EgressInterface.looksVirtual(EgressInterface.interfaceNameOf(choice.address()))) {
+                log.warn(
+                        "The route out of this host runs over {}, which looks like a container bridge."
+                                + " Inbound peer connections will not reach it. Set"
+                                + " aztcast.streaming.torrent.network.acceptor-address if that is wrong.",
+                        EgressInterface.interfaceNameOf(choice.address()));
+            }
+        });
+        return detected;
     }
 
     /**

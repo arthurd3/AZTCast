@@ -108,11 +108,30 @@ aztcast:
         - udp://tracker.therarbg.to:6969/announce
         - udp://tracker.farted.net:6969/announce
         - udp://zer0day.ch:1337/announce
+        - udp://tracker.publictracker.xyz:6969/announce
+        - udp://tracker.peerfect.org:6969/announce
+        - udp://tracker.auctor.tv:6969/announce
+        - udp://tracker-udp.gbitt.info:80/announce
 
-      # How the client presents itself to the swarm. None of this is anonymity:
-      # BitTorrent announces to the tracker and dials every peer directly, and the
-      # library has no proxy support to bolt on. Hiding the origin address is the
-      # network's job (a tunnel, a namespace) — see acceptor-address.
+      # Announce hosts stripped out of a magnet before it is used. The additions above only help;
+      # these are the ones that actively cost. A public magnet is copied between indexers for years
+      # and keeps trackers that shut down long ago — every one of these appeared in a single real
+      # magnet this pipeline was handed, and every one of them cost a full tracker timeout on every
+      # announce round, ahead of the live trackers queued behind them.
+      #
+      # Matched on host, so a port or path change does not resurrect one.
+      dead-trackers:
+        - public.popcorn-tracker.org
+        - tracker.coppersurfer.tk
+        - torrent.gresille.org
+        - tracker.internetwarriors.net
+        - glotorrents.pw
+        - p4p.arenabg.com
+        - tracker.bittor.pw
+        - open.facedatabase.com
+        - tracker.pirateparty.gr
+        - tracker.zer0day.to
+
       network:
         # PREFER_ENCRYPTED, not REQUIRE_: obfuscation beats naive traffic
         # classification, but requiring it drops peers that will not do it.
@@ -123,9 +142,15 @@ aztcast:
         # Left on: PEX is how a swarm stays healthy without leaning on trackers,
         # and it hides nothing from peers who are already in the swarm with us.
         disable-peer-exchange: false
-        # Blank binds to whatever the library picks. Set it to a tunnel's address
-        # to keep torrent traffic off every other interface — it binds outgoing
-        # connections too, not just the listening socket.
+        # Blank means "the address this host's default route actually goes out on",
+        # resolved at startup. The library's own answer is the first non-loopback IPv4
+        # address the JVM enumerates, which on any machine with Docker installed is a
+        # container bridge — this one enumerates sixteen of them ahead of the physical
+        # NIC, so every run bound to 172.20.0.1 and no peer on the internet could reach
+        # the listening socket.
+        #
+        # Set it to a tunnel's address to keep torrent traffic off every other
+        # interface; it binds outgoing connections too, not just the listening socket.
         acceptor-address: ""
         acceptor-port: 6891
         # A ceiling on established connections, which is not the same as a ceiling on
@@ -146,6 +171,12 @@ aztcast:
         # Unbounded in the library, which lets a slow disk back up in heap with nothing
         # to stop it. At 16 KiB a block this caps that backlog around 32 MiB.
         max-io-queue-size: 2048
+
+        # How long to wait for a tracker to answer. The library leaves this unset, which means a
+        # dead host is only abandoned when the socket itself gives up — the TimeoutException from
+        # bt.peer.ScheduledPeerSource in the logs is that happening ten seconds at a time, serially,
+        # while live trackers wait behind it.
+        tracker-timeout: 8s
 
     # Who served each torrent. Off by default: it records peer addresses, which are
     # personal data, and that should be a choice rather than a side effect of upgrading.

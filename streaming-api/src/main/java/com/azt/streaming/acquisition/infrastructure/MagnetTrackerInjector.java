@@ -11,7 +11,8 @@ import java.util.Set;
 import org.springframework.stereotype.Component;
 
 /**
- * Adds announce URLs to a magnet before it is handed to the swarm.
+ * Adjusts a magnet's announce list before it is handed to the swarm: adds trackers worth asking,
+ * removes ones that are not there any more.
  *
  * <p>A magnet's tracker list is whoever published it chose to include, and often that is nothing at
  * all — a bare {@code magnet:?xt=urn:btih:...} leaves DHT and peer exchange to discover the entire
@@ -23,25 +24,39 @@ import org.springframework.stereotype.Component;
  * request whose timing names what is about to be downloaded, to a host with no reason to be told —
  * the same trade ADR-0016 refuses for the provenance map's geolocation.
  *
- * <p>Pure apart from the injected list, so the rebuild can be asserted without a network or a
+ * <p>The removals matter as much as the additions, and cost more when they are wrong. A public
+ * magnet is copied from one indexer to the next for years and accumulates trackers that shut down
+ * long ago — one real magnet carried {@code public.popcorn-tracker.org},
+ * {@code tracker.coppersurfer.tk}, {@code torrent.gresille.org} and
+ * {@code tracker.internetwarriors.net}, all dead for years and all still announced to. Each one
+ * costs a full tracker timeout on every announce round, and the library collects peer sources
+ * serially, so a handful of dead hosts delays the live ones behind them.
+ *
+ * <p>Pure apart from the injected lists, so the rebuild can be asserted without a network or a
  * runtime.
  */
 @Component
 public class MagnetTrackerInjector {
 
     private final List<String> extraTrackers;
+    private final Set<String> deadHosts;
 
     @Autowired
     public MagnetTrackerInjector(StreamingProperties properties) {
-        this(properties.torrent().extraTrackers());
+        this(properties.torrent().extraTrackers(), properties.torrent().deadTrackers());
     }
 
     /** For tests, which have a list and no reason to build a whole properties tree around it. */
-    MagnetTrackerInjector(List<String> extraTrackers) {
+    MagnetTrackerInjector(List<String> extraTrackers, List<String> deadTrackers) {
         this.extraTrackers = extraTrackers.stream()
                 .filter(url -> url != null && !url.isBlank())
                 .map(String::trim)
                 .toList();
+        this.deadHosts = deadTrackers.stream()
+                .filter(entry -> entry != null && !entry.isBlank())
+                .map(MagnetTrackerInjector::hostOf)
+                .filter(host -> !host.isEmpty())
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     /**
@@ -59,14 +74,17 @@ public class MagnetTrackerInjector {
      * magnet's own trackers asked first, however much one might want it.
      */
     public MagnetUri augment(MagnetUri parsed) {
-        if (extraTrackers.isEmpty()) {
+        if (extraTrackers.isEmpty() && deadHosts.isEmpty()) {
             return parsed;
         }
 
         Set<String> seen = new LinkedHashSet<>();
         List<String> merged = new ArrayList<>();
         for (String tracker : concat(parsed.getTrackerUrls(), extraTrackers)) {
-            if (tracker != null && !tracker.isBlank() && seen.add(tracker.trim().toLowerCase(Locale.ROOT))) {
+            if (tracker == null || tracker.isBlank() || isDead(tracker)) {
+                continue;
+            }
+            if (seen.add(tracker.trim().toLowerCase(Locale.ROOT))) {
                 merged.add(tracker.trim());
             }
         }
@@ -76,6 +94,39 @@ public class MagnetTrackerInjector {
         merged.forEach(builder::tracker);
         parsed.getPeerAddresses().forEach(builder::peer);
         return builder.buildUri();
+    }
+
+    private boolean isDead(String trackerUrl) {
+        return deadHosts.contains(hostOf(trackerUrl));
+    }
+
+    /**
+     * The hostname out of an announce URL, lowercased, port and path discarded.
+     *
+     * <p>Matched on host rather than on the whole URL so one entry covers every spelling a magnet
+     * might carry — {@code udp://x:6969/announce}, {@code udp://x:1337} and {@code http://x/announce}
+     * are the same dead machine, and listing all three is a maintenance burden that guarantees one
+     * gets missed.
+     *
+     * <p>Parsed by hand rather than with {@link java.net.URI}: announce URLs in the wild are
+     * routinely malformed enough to throw, and a tracker whose URL will not parse is not one to
+     * announce to either way.
+     */
+    private static String hostOf(String trackerUrl) {
+        String value = trackerUrl.trim().toLowerCase(Locale.ROOT);
+        int scheme = value.indexOf("://");
+        if (scheme >= 0) {
+            value = value.substring(scheme + 3);
+        }
+        int end = value.length();
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == ':' || c == '/' || c == '?') {
+                end = i;
+                break;
+            }
+        }
+        return value.substring(0, end);
     }
 
     private static List<String> concat(Iterable<String> first, List<String> second) {

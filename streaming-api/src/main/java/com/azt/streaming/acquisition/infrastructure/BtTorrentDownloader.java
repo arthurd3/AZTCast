@@ -134,10 +134,11 @@ public class BtTorrentDownloader implements TorrentDownloader {
                 new AtomicLong(0));
 
         client.startAsync(
-                state -> onSessionState(state, result, torrentId, magnetUrl, targetDirectory, progress),
+                state -> onSessionState(state, result, torrentId, describe(parsed), targetDirectory, progress),
                 POLL_INTERVAL.toMillis());
 
-        log.info("Started background download {} for magnet {} into {}", videoId, magnetUrl, targetDirectory);
+        log.info("Started background download {} for {} into {}", videoId, describe(parsed), targetDirectory);
+        log.debug("Magnet for {}: {}", videoId, magnetUrl);
         return result;
     }
 
@@ -145,14 +146,14 @@ public class BtTorrentDownloader implements TorrentDownloader {
             TorrentSessionState state,
             CompletableFuture<Path> result,
             TorrentId torrentId,
-            String magnetUrl,
+            String torrentLabel,
             Path targetDirectory,
             Progress progress) {
 
         if (state.getPiecesRemaining() != 0) {
             reportProgress(state, result, progress);
             sampleTransfersOccasionally(state, torrentId, progress.lastSampleNanos());
-            logProgressOccasionally(state, magnetUrl, progress);
+            logProgressOccasionally(state, torrentLabel, progress);
             return;
         }
 
@@ -160,7 +161,7 @@ public class BtTorrentDownloader implements TorrentDownloader {
         // point at which the final byte counts exist and the torrent is still being attributed.
         peerEvents.sampleTransfers(torrentId, state.getConnectedPeers());
 
-        log.info("Download finished for magnet {}", magnetUrl);
+        log.info("Download finished for {}", torrentLabel);
         try {
             videoFileLocator
                     .locateLargestVideo(targetDirectory)
@@ -234,7 +235,7 @@ public class BtTorrentDownloader implements TorrentDownloader {
      * <p>Does its own timing rather than calling {@code due}, because the rate needs the length of
      * the interval that the CAS in there consumes.
      */
-    private void logProgressOccasionally(TorrentSessionState state, String magnetUrl, Progress progress) {
+    private void logProgressOccasionally(TorrentSessionState state, String torrentLabel, Progress progress) {
         long now = System.nanoTime();
         long previous = progress.lastLogNanos().get();
         long elapsedNanos = now - previous;
@@ -249,9 +250,9 @@ public class BtTorrentDownloader implements TorrentDownloader {
         long sinceLastLog = downloaded - progress.lastLoggedBytes().getAndSet(downloaded);
 
         log.info(
-                "Progress {}% for magnet {} - {} peers, {}",
+                "Progress {}% for {} - {} peers, {}",
                 String.format("%.1f", progressPercent(state)),
-                magnetUrl,
+                torrentLabel,
                 state.getConnectedPeers().size(),
                 rate(sinceLastLog, elapsedNanos));
     }
@@ -283,6 +284,20 @@ public class BtTorrentDownloader implements TorrentDownloader {
             return 0.0;
         }
         return (double) (wanted - state.getPiecesRemaining()) / wanted * 100.0;
+    }
+
+    /**
+     * A torrent named for a log line: its display name if the magnet carried one, else its hash.
+     *
+     * <p>Every progress tick used to carry the entire magnet URI — around 1.5 kB of tracker query
+     * string, fifteen times per download. It is the reason a real failure in this pipeline arrived
+     * buried in screenfuls of the same repeated string, and the full URI is still one DEBUG line
+     * away for anyone who needs it.
+     */
+    private static String describe(MagnetUri magnet) {
+        return magnet.getDisplayName()
+                .map(name -> "\"" + name + "\"")
+                .orElseGet(() -> magnet.getTorrentId().toString());
     }
 
     private static void stopQuietly(BtClient client, String magnetUrl) {

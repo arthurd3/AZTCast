@@ -11,7 +11,8 @@ import bt.runtime.BtRuntime;
 import com.azt.streaming.acquisition.domain.PeerObservation;
 import com.azt.streaming.acquisition.domain.PeerObservationSink;
 import java.time.Clock;
-import java.util.HashSet;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -46,8 +47,25 @@ public class PeerEventRecorder {
     /** The ingestion each torrent currently belongs to. Absent means "not being tracked". */
     private final Map<TorrentId, Tracked> tracked = new ConcurrentHashMap<>();
 
-    /** Torrents already subscribed, because subscribing twice would double every observation. */
-    private final Set<TorrentId> subscribed = new HashSet<>();
+    /**
+     * Torrents already subscribed, because subscribing twice would double every observation.
+     *
+     * <p>Bounded, and it has to be. The library's {@code EventSource} has no unsubscribe, so this
+     * set can never shrink on its own — it grew by one {@code TorrentId} per magnet ever ingested
+     * and held them for the life of the process. Past the cap the oldest entries are forgotten,
+     * which risks a duplicate subscription for a torrent ingested tens of thousands of magnets ago
+     * and re-ingested now. That is a rounding error on one video's peer counts; an unbounded set on
+     * a long-lived server is not.
+     */
+    private static final int MAX_SUBSCRIPTIONS = 10_000;
+
+    private final Set<TorrentId> subscribed = Collections.newSetFromMap(
+            new LinkedHashMap<>(64, 0.75f, false) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<TorrentId, Boolean> eldest) {
+                    return size() > MAX_SUBSCRIPTIONS;
+                }
+            });
 
     /**
      * When each live connection was established, so a disconnect can say how long it lasted.

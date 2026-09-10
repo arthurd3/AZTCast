@@ -28,6 +28,7 @@ public final class PropertiesFixture {
         private List<StreamingProperties.Rendition> renditions = List.of(RENDITION_720P, RENDITION_240P);
         private List<String> videoExtensions = List.of("mp4", "mkv");
         private List<String> extraTrackers = List.of();
+        private List<String> deadTrackers = List.of();
         private boolean downloadVideoOnly = true;
         private boolean offloadEnabled = false;
         private String internalPrefix = "/_media";
@@ -69,6 +70,11 @@ public final class PropertiesFixture {
             return this;
         }
 
+        public Builder deadTrackers(List<String> value) {
+            this.deadTrackers = value;
+            return this;
+        }
+
         public Builder downloadVideoOnly(boolean value) {
             this.downloadVideoOnly = value;
             return this;
@@ -104,6 +110,7 @@ public final class PropertiesFixture {
                             Duration.ofSeconds(30),
                             Duration.ofSeconds(1),
                             extraTrackers,
+                            deadTrackers,
                             downloadVideoOnly,
                             new StreamingProperties.Network(
                                     StreamingProperties.Encryption.PREFER_ENCRYPTED,
@@ -116,7 +123,8 @@ public final class PropertiesFixture {
                                     600,
                                     200,
                                     200,
-                                    2048)),
+                                    2048,
+                                    Duration.ofSeconds(8))),
                     new StreamingProperties.Transcoding(
                             new StreamingProperties.Transcoding.Pool(1, 1, 10, "test-")),
                     new StreamingProperties.Playback(offloadEnabled, internalPrefix),

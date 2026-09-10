@@ -80,6 +80,11 @@ public record StreamingProperties(
      *     snapshot of a public list rather than a live fetch: looking one up per ingestion would send
      *     a request naming what is about to be downloaded, which is the kind of leak ADR-0016
      *     already refuses elsewhere. Empty disables the whole mechanism.
+     * @param deadTrackers announce hosts to strip out of a magnet before using it. Public magnets
+     *     are copied from one indexer to the next for years and accumulate trackers that shut down
+     *     long ago; each one still costs a full tracker timeout on every announce round, and the
+     *     library queries them serially per source. Matched on host, so a port change does not
+     *     resurrect one.
      * @param downloadVideoOnly skip every file in the torrent except the video that will actually be
      *     transcoded. A season pack is ten episodes of which this pipeline uses one, so the default
      *     behaviour spends nine tenths of the bandwidth on files it then deletes unread.
@@ -89,6 +94,7 @@ public record StreamingProperties(
             @NotNull Duration downloadTimeout,
             @NotNull Duration progressLogInterval,
             @NotNull List<String> extraTrackers,
+            @NotNull List<String> deadTrackers,
             boolean downloadVideoOnly,
             @NestedConfigurationProperty @Valid @NotNull Network network) {}
 
@@ -146,7 +152,8 @@ public record StreamingProperties(
             @Positive int maxPeerConnections,
             @Positive int maxPendingConnectionRequests,
             @Positive int peersPerTrackerRequest,
-            @Positive int maxIoQueueSize) {}
+            @Positive int maxIoQueueSize,
+            @NotNull Duration trackerTimeout) {}
 
     /**
      * Message-stream encryption policy, named to match the library's four values.
