@@ -21,7 +21,7 @@
         <bt.version>1.10</bt.version>
         <springdoc.version>2.8.6</springdoc.version>
         <archunit.version>1.4.1</archunit.version>
-        <sqlite.version>3.49.1.0</sqlite.version>
+        <sqlite.version>3.53.4.0</sqlite.version>
         <geoip2.version>5.2.0</geoip2.version>
     </properties>
 
